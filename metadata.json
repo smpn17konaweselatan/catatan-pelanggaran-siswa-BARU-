@@ -1,0 +1,6 @@
+{
+  "name": "Buku Catatan Pelanggaran Siswa & Kedisiplinan Sekolah",
+  "description": "Format data lengkap pencatatan pelanggaran aturan sekolah dengan tanggal, jenis pelanggaran, poin, sanksi edukatif, dan cetak format laporan resmi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
