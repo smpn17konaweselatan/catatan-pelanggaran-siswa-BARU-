@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Check, BookOpen, AlertCircle, User, GraduationCap, CheckCircle2, ChevronDown } from 'lucide-react';
+import { X, Check, BookOpen, AlertCircle, User, GraduationCap, CheckCircle2, ChevronDown, RotateCcw } from 'lucide-react';
 import { ViolationRecord, ViolationSeverity, SanctionStatus } from '../types/violation';
 import { STANDARD_RULES_CATALOG } from '../data/rulesCatalog';
 import { MASTER_STUDENTS, MASTER_TEACHERS, StudentMasterItem, TeacherMasterItem } from '../data/schoolMasterData';
@@ -58,15 +58,30 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
   const teacherInputRef = useRef<HTMLInputElement>(null);
   const teacherDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load students & teachers from SQLite backend or fallback
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
+
+  // Load students & teachers from SQLite backend whenever modal opens
+  const loadMasterData = async () => {
+    setIsRefreshingMaster(true);
+    try {
+      const [stu, tea] = await Promise.all([
+        fetchStudentsFromSql(),
+        fetchTeachersFromSql()
+      ]);
+      if (stu && stu.length > 0) setStudentsList(stu);
+      if (tea && tea.length > 0) setTeachersList(tea);
+    } catch (e) {
+      console.warn('Gagal menyinkronkan master data guru & siswa:', e);
+    } finally {
+      setIsRefreshingMaster(false);
+    }
+  };
+
   useEffect(() => {
-    fetchStudentsFromSql().then(data => {
-      if (data && data.length > 0) setStudentsList(data);
-    });
-    fetchTeachersFromSql().then(data => {
-      if (data && data.length > 0) setTeachersList(data);
-    });
-  }, []);
+    if (isOpen) {
+      loadMasterData();
+    }
+  }, [isOpen]);
 
   // Handle outside clicks to close dropdowns
   useEffect(() => {
@@ -331,9 +346,20 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Nama Lengkap Siswa with Autocomplete */}
               <div className="sm:col-span-2 relative">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Nama Lengkap Siswa <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Nama Lengkap Siswa <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={loadMasterData}
+                    title="Segarkan data siswa dari src/db/siswa.xlsx atau siswa.csv"
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
+                  >
+                    <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
+                    <span>{studentsList.length} siswa</span>
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     ref={studentInputRef}
@@ -625,9 +651,20 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
 
               {/* Guru / Petugas Pelapor with Autocomplete */}
               <div className="relative">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Guru / Petugas Pelapor
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Guru / Petugas Pelapor
+                  </label>
+                  <button
+                    type="button"
+                    onClick={loadMasterData}
+                    title="Segarkan data guru dari src/db/guru.xlsx atau guru.csv"
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
+                  >
+                    <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
+                    <span>{teachersList.length} guru</span>
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     ref={teacherInputRef}

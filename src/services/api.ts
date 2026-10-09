@@ -123,3 +123,63 @@ export function downloadSqlDatabaseFile() {
   a.click();
   document.body.removeChild(a);
 }
+
+// Download Master Guru Excel (.xlsx)
+export function downloadMasterTeachersExcel() {
+  const a = document.createElement('a');
+  a.href = '/api/master/download/guru.xlsx';
+  a.download = 'guru.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// Download Master Siswa Excel (.xlsx)
+export function downloadMasterStudentsExcel() {
+  const a = document.createElement('a');
+  a.href = '/api/master/download/siswa.xlsx';
+  a.download = 'siswa.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// Upload & replace Master Guru (.xlsx / .csv)
+export async function uploadMasterTeachersFile(file: File): Promise<{ count: number; message: string }> {
+  const buffer = await file.arrayBuffer();
+  const res = await fetch('/api/master/upload/guru', {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: buffer,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Gagal mengunggah file data master guru.');
+  }
+  return await res.json();
+}
+
+// Upload & replace Master Siswa (.xlsx / .csv)
+export async function uploadMasterStudentsFile(file: File): Promise<{ count: number; message: string }> {
+  const buffer = await file.arrayBuffer();
+  const res = await fetch('/api/master/upload/siswa', {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: buffer,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Gagal mengunggah file data master siswa.');
+  }
+  return await res.json();
+}
+
+// Force refresh master data from files into SQLite
+export async function refreshMasterDataFromDisk(): Promise<{ teachersCount: number; studentsCount: number; message: string }> {
+  const res = await fetch('/api/master/refresh', { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Gagal menyinkronkan data dari file.');
+  }
+  return await res.json();
+}

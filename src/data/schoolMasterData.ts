@@ -23,15 +23,30 @@ export interface TeacherMasterItem {
 export const RAW_STUDENTS_CSV = rawStudentsCsv;
 export const RAW_TEACHERS_CSV = rawTeachersCsv;
 
-function parseCsvLine(line: string): string[] {
+export function detectCsvDelimiter(text: string): string {
+  const sample = text.split(/\r?\n/).slice(0, 5).join('\n');
+  const semicolons = (sample.match(/;/g) || []).length;
+  const commas = (sample.match(/,/g) || []).length;
+  const tabs = (sample.match(/\t/g) || []).length;
+  if (semicolons >= commas && semicolons > 0) return ';';
+  if (tabs > commas && tabs > 0) return '\t';
+  return ',';
+}
+
+export function parseCsvLine(line: string, delimiter: string = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === delimiter && !inQuotes) {
       result.push(current.trim());
       current = '';
     } else {
@@ -43,44 +58,89 @@ function parseCsvLine(line: string): string[] {
 }
 
 export function parseStudentsCsv(csvText: string): StudentMasterItem[] {
-  const lines = csvText.trim().split(/\r?\n/);
+  const cleanText = (csvText || '').replace(/^\uFEFF/, '').trim();
+  const delimiter = detectCsvDelimiter(cleanText);
+  const lines = cleanText.split(/\r?\n/);
   if (lines.length <= 1) return [];
+
+  const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
+  const nisIdx = headerParts.findIndex(h => h === 'nis');
+  const nisnIdx = headerParts.findIndex(h => h.includes('nisn'));
+  const namaIdx = headerParts.findIndex(h => h.includes('nama'));
+  const jkIdx = headerParts.findIndex(h => h.includes('kelamin') || h === 'jk' || h === 'l/p');
+  const kelasIdx = headerParts.findIndex(h => h.includes('kelas') || h.includes('rombel'));
+
+  const actualNisIdx = nisIdx >= 0 ? nisIdx : 0;
+  const actualNisnIdx = nisnIdx >= 0 ? nisnIdx : 1;
+  const actualNamaIdx = namaIdx >= 0 ? namaIdx : 2;
+  const actualJkIdx = jkIdx >= 0 ? jkIdx : 3;
+  const actualKelasIdx = kelasIdx >= 0 ? kelasIdx : 4;
 
   const items: StudentMasterItem[] = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const parts = parseCsvLine(line);
-    if (parts.length >= 5) {
-      items.push({
-        nis: parts[0]?.trim() || '',
-        nisn: parts[1]?.trim() || '',
-        nama: parts[2]?.trim() || '',
-        jenisKelamin: (parts[3]?.trim().toUpperCase() === 'P' ? 'P' : 'L') as 'L' | 'P',
-        kelas: parts[4]?.trim() || ''
-      });
+    let parts = parseCsvLine(line, delimiter);
+    if (parts.length < 5 && delimiter !== ';') {
+      const semi = parseCsvLine(line, ';');
+      if (semi.length >= 5) parts = semi;
+    } else if (parts.length < 5 && delimiter !== ',') {
+      const comm = parseCsvLine(line, ',');
+      if (comm.length >= 5) parts = comm;
     }
+    const nama = (parts[actualNamaIdx] || '').trim();
+    if (!nama || nama.toLowerCase() === 'nama') continue;
+
+    const jkRaw = (parts[actualJkIdx] || 'L').trim().toUpperCase();
+    items.push({
+      nis: (parts[actualNisIdx] || '').trim(),
+      nisn: (parts[actualNisnIdx] || '').trim(),
+      nama,
+      jenisKelamin: (jkRaw.startsWith('P') ? 'P' : 'L') as 'L' | 'P',
+      kelas: (parts[actualKelasIdx] || 'VII-A').trim()
+    });
   }
   return items;
 }
 
 export function parseTeachersCsv(csvText: string): TeacherMasterItem[] {
-  const lines = csvText.trim().split(/\r?\n/);
+  const cleanText = (csvText || '').replace(/^\uFEFF/, '').trim();
+  const delimiter = detectCsvDelimiter(cleanText);
+  const lines = cleanText.split(/\r?\n/);
   if (lines.length <= 1) return [];
+
+  const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
+  const nipIdx = headerParts.findIndex(h => h.includes('nip'));
+  const namaIdx = headerParts.findIndex(h => h.includes('nama') || h.includes('guru'));
+  const jabatanIdx = headerParts.findIndex(h => h.includes('jabatan') || h.includes('mapel') || h.includes('tugas'));
+  const peranIdx = headerParts.findIndex(h => h.includes('peran') || h.includes('status'));
+
+  const actualNipIdx = nipIdx >= 0 ? nipIdx : 0;
+  const actualNamaIdx = namaIdx >= 0 ? namaIdx : 1;
+  const actualJabatanIdx = jabatanIdx >= 0 ? jabatanIdx : 2;
+  const actualPeranIdx = peranIdx >= 0 ? peranIdx : 3;
 
   const items: TeacherMasterItem[] = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const parts = parseCsvLine(line);
-    if (parts.length >= 4) {
-      items.push({
-        nip: parts[0]?.trim() || '',
-        nama: parts[1]?.trim() || '',
-        jabatan: parts[2]?.trim() || '',
-        peran: parts[3]?.trim() || 'Guru'
-      });
+    let parts = parseCsvLine(line, delimiter);
+    if (parts.length < 4 && delimiter !== ';') {
+      const semi = parseCsvLine(line, ';');
+      if (semi.length >= 4) parts = semi;
+    } else if (parts.length < 4 && delimiter !== ',') {
+      const comm = parseCsvLine(line, ',');
+      if (comm.length >= 4) parts = comm;
     }
+    const nama = (parts[actualNamaIdx] || '').trim();
+    if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama guru') continue;
+
+    items.push({
+      nip: (parts[actualNipIdx] || '-').trim(),
+      nama,
+      jabatan: (parts[actualJabatanIdx] || 'Guru Mata Pelajaran').trim(),
+      peran: (parts[actualPeranIdx] || 'Guru Pelapor').trim()
+    });
   }
   return items;
 }

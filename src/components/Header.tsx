@@ -13,6 +13,7 @@ import {
   Database
 } from 'lucide-react';
 import { SchoolProfile } from '../types/violation';
+import { downloadMasterTeachersExcel, downloadMasterStudentsExcel } from '../services/api';
 
 interface HeaderProps {
   profile: SchoolProfile;
@@ -167,6 +168,34 @@ export const Header: React.FC<HeaderProps> = ({
                       <div>
                         <div className="font-medium">Ekspor Data Lengkap (CSV/Excel)</div>
                         <div className="text-[10px] text-slate-400">Semua catatan pelanggaran aktif</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowExportMenu(false);
+                        downloadMasterTeachersExcel();
+                      }}
+                      className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <div className="font-medium text-emerald-900">Unduh Data Guru (guru.xlsx)</div>
+                        <div className="text-[10px] text-slate-400">File Excel master guru & pelapor</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowExportMenu(false);
+                        downloadMasterStudentsExcel();
+                      }}
+                      className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <div>
+                        <div className="font-medium text-indigo-900">Unduh Data Siswa (siswa.xlsx)</div>
+                        <div className="text-[10px] text-slate-400">File Excel master siswa & kelas</div>
                       </div>
                     </button>
 

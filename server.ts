@@ -26,7 +26,17 @@ const isProduction = process.env.NODE_ENV === 'production';
 const PORT = isProduction ? (Number(process.env.PORT) || 8080) : 3000;
 
 app.use(express.json());
-app.use(express.raw({ type: ['application/octet-stream', 'application/x-sqlite3'], limit: '50mb' }));
+app.use(express.raw({ 
+  type: [
+    'application/octet-stream', 
+    'application/x-sqlite3', 
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'text/csv',
+    'text/plain'
+  ], 
+  limit: '50mb' 
+}));
 
 // Health check endpoint for Cloud Run
 app.get('/health', (req, res) => {
@@ -102,6 +112,89 @@ app.get('/api/teachers', async (req, res) => {
   } catch (error: any) {
     console.error('[SQLite] Error fetching teachers:', error);
     res.status(500).json({ error: error.message || 'Gagal mengambil data guru dari database SQLite.' });
+  }
+});
+
+// API: Download master guru.xlsx file
+app.get('/api/master/download/guru.xlsx', (req, res) => {
+  const xlsxPath = path.resolve(process.cwd(), 'src/db/guru.xlsx');
+  if (fs.existsSync(xlsxPath)) {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="guru.xlsx"');
+    return res.sendFile(xlsxPath);
+  }
+  res.status(404).json({ error: 'File guru.xlsx tidak ditemukan di src/db/' });
+});
+
+// API: Download master siswa.xlsx file
+app.get('/api/master/download/siswa.xlsx', (req, res) => {
+  const xlsxPath = path.resolve(process.cwd(), 'src/db/siswa.xlsx');
+  if (fs.existsSync(xlsxPath)) {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="siswa.xlsx"');
+    return res.sendFile(xlsxPath);
+  }
+  res.status(404).json({ error: 'File siswa.xlsx tidak ditemukan di src/db/' });
+});
+
+// API: Upload / replace master teachers file (.xlsx or .csv)
+app.post('/api/master/upload/guru', async (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'File master guru tidak valid atau kosong.' });
+    }
+    const isZipOrXlsx = req.body[0] === 0x50 && req.body[1] === 0x4B; // 'PK' magic bytes
+    if (isZipOrXlsx) {
+      const dest = path.resolve(process.cwd(), 'src/db/guru.xlsx');
+      fs.writeFileSync(dest, req.body);
+    } else {
+      const dest = path.resolve(process.cwd(), 'src/db/guru.csv');
+      fs.writeFileSync(dest, req.body);
+    }
+    const refreshed = await getSqliteTeachers();
+    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data guru / petugas pelapor!` });
+  } catch (error: any) {
+    console.error('[Master] Error uploading guru:', error);
+    res.status(500).json({ error: error.message || 'Gagal menyimpan file master guru.' });
+  }
+});
+
+// API: Upload / replace master students file (.xlsx or .csv)
+app.post('/api/master/upload/siswa', async (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'File master siswa tidak valid atau kosong.' });
+    }
+    const isZipOrXlsx = req.body[0] === 0x50 && req.body[1] === 0x4B;
+    if (isZipOrXlsx) {
+      const dest = path.resolve(process.cwd(), 'src/db/siswa.xlsx');
+      fs.writeFileSync(dest, req.body);
+    } else {
+      const dest = path.resolve(process.cwd(), 'src/db/siswa.csv');
+      fs.writeFileSync(dest, req.body);
+    }
+    const refreshed = await getSqliteStudents();
+    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data siswa!` });
+  } catch (error: any) {
+    console.error('[Master] Error uploading siswa:', error);
+    res.status(500).json({ error: error.message || 'Gagal menyimpan file master siswa.' });
+  }
+});
+
+// API: Trigger master data sync / refresh from disk
+app.post('/api/master/refresh', async (req, res) => {
+  try {
+    const teachers = await getSqliteTeachers();
+    const students = await getSqliteStudents();
+    res.json({
+      success: true,
+      teachersCount: teachers.length,
+      studentsCount: students.length,
+      message: `Master data disinkronkan: ${teachers.length} guru dan ${students.length} siswa.`
+    });
+  } catch (error: any) {
+    console.error('[Master] Error refreshing master data:', error);
+    res.status(500).json({ error: error.message || 'Gagal menyinkronkan master data.' });
   }
 });
 
@@ -232,7 +325,8 @@ VALUES (1, '${profile.namaSekolah.replace(/'/g, "''")}', '${profile.npsn}', '${p
     if (studentsList.length > 0) {
       sql += `-- INSERT DATA SISWA\n`;
       studentsList.forEach(s => {
-        sql += `INSERT OR IGNORE INTO students (nisn, nama, jenis_kelamin, kelas, alamat, nama_orang_tua, kontak_orang_tua) VALUES ('${s.nisn}', '${s.nama.replace(/'/g, "''")}', '${s.jenisKelamin}', '${s.kelas}', '${(s.alamat || '').replace(/'/g, "''")}', '${(s.namaOrangTua || '').replace(/'/g, "''")}', '${s.kontakOrangTua || ''}');\n`;
+        const student = s as any;
+        sql += `INSERT OR IGNORE INTO students (nisn, nama, jenis_kelamin, kelas, alamat, nama_orang_tua, kontak_orang_tua) VALUES ('${student.nisn}', '${student.nama.replace(/'/g, "''")}', '${student.jenisKelamin}', '${student.kelas}', '${(student.alamat || '').replace(/'/g, "''")}', '${(student.namaOrangTua || '').replace(/'/g, "''")}', '${student.kontakOrangTua || ''}');\n`;
       });
       sql += `\n`;
     }
