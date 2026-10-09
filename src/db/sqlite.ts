@@ -2,10 +2,89 @@ import initSqlJs from 'sql.js';
 import type { Database, SqlJsStatic } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
-import type { ViolationRecord, SchoolProfile, SanctionStatus, ViolationSeverity } from '../types/violation.ts';
-import { MASTER_STUDENTS, MASTER_TEACHERS } from '../data/schoolMasterData.ts';
+import type { ViolationRecord, SchoolProfile, SanctionStatus, ViolationSeverity, StudentMasterItem, TeacherMasterItem } from '../types/violation.ts';
 
 const DB_FILE_PATH = path.resolve(process.cwd(), 'buku_pelanggaran_sekolah.db');
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+export function loadMasterStudentsFromCsv(): StudentMasterItem[] {
+  try {
+    const csvPath = path.resolve(process.cwd(), 'src/db/siswa.csv');
+    if (fs.existsSync(csvPath)) {
+      const content = fs.readFileSync(csvPath, 'utf-8');
+      const lines = content.trim().split(/\r?\n/);
+      if (lines.length > 1) {
+        const list: StudentMasterItem[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const parts = parseCsvLine(line);
+          if (parts.length >= 5) {
+            list.push({
+              nis: parts[0]?.trim() || '',
+              nisn: parts[1]?.trim() || '',
+              nama: parts[2]?.trim() || '',
+              jenisKelamin: (parts[3]?.trim().toUpperCase() === 'P' ? 'P' : 'L') as 'L' | 'P',
+              kelas: parts[4]?.trim() || ''
+            });
+          }
+        }
+        return list;
+      }
+    }
+  } catch (err) {
+    console.error('[SQLite] Gagal membaca src/db/siswa.csv:', err);
+  }
+  return [];
+}
+
+export function loadMasterTeachersFromCsv(): TeacherMasterItem[] {
+  try {
+    const csvPath = path.resolve(process.cwd(), 'src/db/guru.csv');
+    if (fs.existsSync(csvPath)) {
+      const content = fs.readFileSync(csvPath, 'utf-8');
+      const lines = content.trim().split(/\r?\n/);
+      if (lines.length > 1) {
+        const list: TeacherMasterItem[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const parts = parseCsvLine(line);
+          if (parts.length >= 4) {
+            list.push({
+              nip: parts[0]?.trim() || '',
+              nama: parts[1]?.trim() || '',
+              jabatan: parts[2]?.trim() || '',
+              peran: parts[3]?.trim() || 'Guru'
+            });
+          }
+        }
+        return list;
+      }
+    }
+  } catch (err) {
+    console.error('[SQLite] Gagal membaca src/db/guru.csv:', err);
+  }
+  return [];
+}
 
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;
@@ -154,11 +233,12 @@ function ensureTables(database: Database): void {
   // Seed students from master data if count is low
   const studentsCount = database.exec('SELECT COUNT(*) as count FROM students;');
   if (!studentsCount[0] || !studentsCount[0].values[0] || Number(studentsCount[0].values[0][0]) < 20) {
+    const masterStudents = loadMasterStudentsFromCsv();
     const insertStudent = database.prepare(`
       INSERT OR REPLACE INTO students (nis, nisn, nama, jenis_kelamin, kelas)
       VALUES ($nis, $nisn, $nama, $jenis_kelamin, $kelas);
     `);
-    for (const s of MASTER_STUDENTS) {
+    for (const s of masterStudents) {
       insertStudent.run({
         $nis: s.nis,
         $nisn: s.nisn,
@@ -173,11 +253,12 @@ function ensureTables(database: Database): void {
   // Seed teachers from master data if empty
   const teachersCount = database.exec('SELECT COUNT(*) as count FROM teachers;');
   if (!teachersCount[0] || !teachersCount[0].values[0] || Number(teachersCount[0].values[0][0]) === 0) {
+    const masterTeachers = loadMasterTeachersFromCsv();
     const insertTeacher = database.prepare(`
       INSERT OR REPLACE INTO teachers (nip, nama, jabatan, peran)
       VALUES ($nip, $nama, $jabatan, $peran);
     `);
-    for (const t of MASTER_TEACHERS) {
+    for (const t of masterTeachers) {
       insertTeacher.run({
         $nip: t.nip,
         $nama: t.nama,
@@ -337,7 +418,7 @@ export async function getSqliteStudents() {
     ORDER BY kelas ASC, nama ASC;
   `);
 
-  if (!res[0] || !res[0].values) return MASTER_STUDENTS;
+  if (!res[0] || !res[0].values) return loadMasterStudentsFromCsv();
   const cols = res[0].columns;
   return res[0].values.map(row => {
     const obj: any = {};
@@ -356,7 +437,7 @@ export async function getSqliteTeachers() {
     ORDER BY id ASC;
   `);
 
-  if (!res[0] || !res[0].values) return MASTER_TEACHERS;
+  if (!res[0] || !res[0].values) return loadMasterTeachersFromCsv();
   const cols = res[0].columns;
   return res[0].values.map(row => {
     const obj: any = {};

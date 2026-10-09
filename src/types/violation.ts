@@ -50,3 +50,19 @@ export interface SchoolProfile {
   namaWakasekKesiswaan: string;
   nipWakasekKesiswaan: string;
 }
+
+export interface StudentMasterItem {
+  nis: string;
+  nisn: string;
+  nama: string;
+  jenisKelamin: 'L' | 'P';
+  kelas: string;
+}
+
+export interface TeacherMasterItem {
+  nip: string;
+  nama: string;
+  jabatan: string;
+  peran: string;
+}
+
