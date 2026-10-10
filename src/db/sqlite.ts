@@ -63,29 +63,32 @@ export function parseCsvLine(line: string, delimiter: string = ','): string[] {
   return result;
 }
 
+function getNewestMasterFile(baseName: string): { path: string; isXlsx: boolean } | null {
+  const candidates = [
+    path.resolve(process.cwd(), `src/db/${baseName}.xlsx`),
+    path.resolve(process.cwd(), `src/format_data/${baseName}.xlsx`),
+    path.resolve(process.cwd(), `src/db/${baseName}.csv`),
+    path.resolve(process.cwd(), `src/format_data/${baseName}.csv`),
+  ];
+  const existing = candidates.filter(p => fs.existsSync(p));
+  if (existing.length === 0) return null;
+  existing.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  const best = existing[0];
+  return { path: best, isXlsx: best.endsWith('.xlsx') };
+}
+
 /**
- * Reads master students from src/db/siswa.xlsx or src/db/siswa.csv, preferring the newer file.
+ * Reads master students from src/db/siswa.xlsx, src/db/siswa.csv, or src/format_data, preferring the newest file.
  */
 export function loadMasterStudents(): StudentMasterItem[] {
   try {
-    const xlsxPath = path.resolve(process.cwd(), 'src/db/siswa.xlsx');
-    const csvPath = path.resolve(process.cwd(), 'src/db/siswa.csv');
-    const hasXlsx = fs.existsSync(xlsxPath);
-    const hasCsv = fs.existsSync(csvPath);
-
-    let useXlsx = false;
-    if (hasXlsx && hasCsv) {
-      const xlsxMtime = fs.statSync(xlsxPath).mtimeMs;
-      const csvMtime = fs.statSync(csvPath).mtimeMs;
-      useXlsx = xlsxMtime >= csvMtime;
-    } else if (hasXlsx) {
-      useXlsx = true;
-    }
+    const fileInfo = getNewestMasterFile('siswa');
+    if (!fileInfo) return [];
 
     // Try reading XLSX first if chosen or available
-    if (useXlsx && hasXlsx) {
+    if (fileInfo.isXlsx) {
       try {
-        const workbook = XLSX.readFile(xlsxPath);
+        const workbook = XLSX.readFile(fileInfo.path);
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1, defval: '' });
@@ -125,12 +128,19 @@ export function loadMasterStudents(): StudentMasterItem[] {
           }
         }
       } catch (errXlsx) {
-        console.warn('[SQLite] Gagal membaca src/db/siswa.xlsx, mencoba file .csv fallback:', errXlsx);
+        console.warn('[SQLite] Gagal membaca siswa.xlsx, mencoba file .csv fallback:', errXlsx);
       }
     }
 
-    // Try reading CSV
-    if (hasCsv) {
+    // Try reading CSV (either because newest is CSV or XLSX read failed)
+    const csvCandidates = [
+      path.resolve(process.cwd(), 'src/db/siswa.csv'),
+      path.resolve(process.cwd(), 'src/format_data/siswa.csv')
+    ].filter(p => fs.existsSync(p));
+
+    if (csvCandidates.length > 0) {
+      csvCandidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+      const csvPath = csvCandidates[0];
       let content = fs.readFileSync(csvPath, 'utf-8');
       content = content.replace(/^\uFEFF/, '');
       const delimiter = detectCsvDelimiter(content);
@@ -186,28 +196,17 @@ export function loadMasterStudents(): StudentMasterItem[] {
 }
 
 /**
- * Reads master teachers from src/db/guru.xlsx or src/db/guru.csv, preferring the newer file.
+ * Reads master teachers from src/db/guru.xlsx, src/db/guru.csv, or src/format_data, preferring the newest file.
  */
 export function loadMasterTeachers(): TeacherMasterItem[] {
   try {
-    const xlsxPath = path.resolve(process.cwd(), 'src/db/guru.xlsx');
-    const csvPath = path.resolve(process.cwd(), 'src/db/guru.csv');
-    const hasXlsx = fs.existsSync(xlsxPath);
-    const hasCsv = fs.existsSync(csvPath);
-
-    let useXlsx = false;
-    if (hasXlsx && hasCsv) {
-      const xlsxMtime = fs.statSync(xlsxPath).mtimeMs;
-      const csvMtime = fs.statSync(csvPath).mtimeMs;
-      useXlsx = xlsxMtime >= csvMtime;
-    } else if (hasXlsx) {
-      useXlsx = true;
-    }
+    const fileInfo = getNewestMasterFile('guru');
+    if (!fileInfo) return [];
 
     // Try reading XLSX first if chosen or available
-    if (useXlsx && hasXlsx) {
+    if (fileInfo.isXlsx) {
       try {
-        const workbook = XLSX.readFile(xlsxPath);
+        const workbook = XLSX.readFile(fileInfo.path);
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1, defval: '' });
@@ -243,12 +242,19 @@ export function loadMasterTeachers(): TeacherMasterItem[] {
           }
         }
       } catch (errXlsx) {
-        console.warn('[SQLite] Gagal membaca src/db/guru.xlsx, mencoba file .csv fallback:', errXlsx);
+        console.warn('[SQLite] Gagal membaca guru.xlsx, mencoba file .csv fallback:', errXlsx);
       }
     }
 
-    // Try reading CSV
-    if (hasCsv) {
+    // Try reading CSV (either because newest is CSV or XLSX read failed)
+    const csvCandidates = [
+      path.resolve(process.cwd(), 'src/db/guru.csv'),
+      path.resolve(process.cwd(), 'src/format_data/guru.csv')
+    ].filter(p => fs.existsSync(p));
+
+    if (csvCandidates.length > 0) {
+      csvCandidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+      const csvPath = csvCandidates[0];
       let content = fs.readFileSync(csvPath, 'utf-8');
       content = content.replace(/^\uFEFF/, ''); // Remove BOM if present
       const delimiter = detectCsvDelimiter(content);

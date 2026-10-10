@@ -203,17 +203,20 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
       ? student.kelas 
       : student.kelas.replace(/\s+/g, '-');
 
+    // Valuenya ganti dengan NISN nama siswa yang dipilih
+    const selectedNisn = student.nisn || student.nis || '';
+
     setFormData(prev => ({
       ...prev,
       namaSiswa: student.nama,
       kelas: normalizedClass,
-      nisn: student.nis || student.nisn || '',
+      nisn: selectedNisn,
       jenisKelamin: student.jenisKelamin || 'L'
     }));
 
     setShowStudentDropdown(false);
     setAutoFilledNotice(
-      `Data siswa otomatis terisi: Kelas ${normalizedClass}, ${student.jenisKelamin === 'P' ? 'Perempuan' : 'Laki-laki'}, NIS: ${student.nis || student.nisn || '-'}`
+      `Data siswa otomatis terisi: Kelas ${normalizedClass}, ${student.jenisKelamin === 'P' ? 'Perempuan' : 'Laki-laki'}, NISN: ${selectedNisn || '-'}`
     );
   };
 
@@ -415,7 +418,9 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
                             {s.nama}
                           </div>
                           <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                            <span>NIS: <strong className="font-mono text-slate-700">{s.nis || s.nisn || '-'}</strong></span>
+                            <span>NISN: <strong className="font-mono text-indigo-700 font-semibold">{s.nisn || '-'}</strong></span>
+                            <span>&bull;</span>
+                            <span>NIS: <strong className="font-mono text-slate-600">{s.nis || '-'}</strong></span>
                             <span>&bull;</span>
                             <span>{s.jenisKelamin === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)'}</span>
                           </div>
@@ -433,14 +438,17 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
 
               {/* NISN / NIS */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  NIS / NISN
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    NIS / NISN
+                  </label>
+                  <span className="text-[10px] text-indigo-600 font-medium">Otomatis NISN</span>
+                </div>
                 <input
                   type="text"
                   value={formData.nisn || ''}
                   onChange={(e) => setFormData({ ...formData, nisn: e.target.value })}
-                  placeholder="Terisi otomatis atau ketik manual"
+                  placeholder="NISN siswa otomatis terisi"
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 font-mono"
                 />
               </div>
