@@ -124,10 +124,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Katalog Poin & Aturan</span>
             </button>
 
-            {/* Aplikasi Windows (Desktop / Offline) */}
+            {/* Aplikasi Windows (Desktop / Offline) - disembunyikan/dijauhkan dari UI */}
             <button
               onClick={onOpenWindowsDesktop}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+              className="hidden items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
             >
               <Monitor className="w-4 h-4 text-indigo-600" />
               <span>Jalankan di Windows (Desktop)</span>
