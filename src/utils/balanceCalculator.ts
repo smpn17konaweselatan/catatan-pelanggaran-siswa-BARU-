@@ -88,7 +88,7 @@ export function calculateStudentBalances(
       map.set(key, {
         namaSiswa: ms.nama,
         kelas: ms.kelas,
-        nisn: ms.nis || ms.nisn,
+        nisn: ms.nisn || ms.nis,
         jenisKelamin: ms.jenisKelamin,
         saldoAwal: INITIAL_DISCIPLINE_BALANCE,
         totalPoinTerpotong: 0,

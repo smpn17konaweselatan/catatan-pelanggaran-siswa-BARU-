@@ -229,7 +229,7 @@ export const DisciplineRadarCard: React.FC<DisciplineRadarCardProps> = ({
                               Kelas {p.kelas}
                             </span>
                             <span>&bull;</span>
-                            <span>NIS: {p.nisn || '-'}</span>
+                            <span>NISN: {p.nisn || '-'}</span>
                           </div>
                         </div>
 

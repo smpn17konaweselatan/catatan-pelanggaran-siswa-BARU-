@@ -9,6 +9,7 @@ import {
   INITIAL_DISCIPLINE_BALANCE, 
   DisciplineLevel 
 } from '../utils/balanceCalculator';
+import { MASTER_STUDENTS } from '../data/schoolMasterData';
 import { 
   Search, 
   Filter, 
@@ -72,6 +73,17 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
     }
     return map;
   }, [records]);
+
+  // Lookup map for student NISN from master data
+  const studentNisnMap = useMemo(() => {
+    const map = new Map<string, string>();
+    MASTER_STUDENTS.forEach(s => {
+      if (s.nama && s.nisn) {
+        map.set(s.nama.trim().toUpperCase(), s.nisn);
+      }
+    });
+    return map;
+  }, []);
 
   // Extract unique classes for filter
   const classList = useMemo(() => {
@@ -237,7 +249,7 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
               <th className="py-3 px-3 w-12 text-center">No</th>
               <th className="py-3 px-3 w-28">Tanggal & Waktu</th>
               <th className="py-3 px-3 w-48">Nama Siswa & Saldo</th>
-              <th className="py-3 px-2 w-16 text-center">Kelas</th>
+              <th className="py-3 px-2.5 w-20 min-w-[76px] text-center whitespace-nowrap">Kelas</th>
               <th className="py-3 px-3">Jenis Pelanggaran</th>
               <th className="py-3 px-3 w-28 text-center">Poin & Sisa Saldo</th>
               <th className="py-3 px-3">Sanksi yang Diberikan</th>
@@ -305,7 +317,7 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
                           </span>
                         </div>
                         <div className="text-[11px] font-mono text-slate-500">
-                          NIS: {item.nisn}
+                          NISN: {item.nisn || studentNisnMap.get(item.namaSiswa.trim().toUpperCase()) || '-'}
                         </div>
                         {balance && (
                           <div className="w-24 bg-slate-200 rounded-full h-1.5 mt-1 overflow-hidden">
@@ -318,8 +330,8 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
                       </td>
 
                       {/* Kelas */}
-                      <td className="py-3 px-2 text-center">
-                        <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                      <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                        <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded text-[11px] whitespace-nowrap inline-block">
                           {item.kelas}
                         </span>
                       </td>
