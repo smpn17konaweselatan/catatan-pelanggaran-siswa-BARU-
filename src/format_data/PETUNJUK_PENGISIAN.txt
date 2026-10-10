@@ -1,0 +1,36 @@
+PETUNJUK PENGISIAN FORMAT DATA MASTER (GURU & SISWA)
+======================================================
+Folder ini (/src/format_data) dipisahkan khusus untuk pengisian data master oleh guru/operator sekolah.
+Format file master yang digunakan adalah file CSV (.csv):
+- /src/format_data/guru.csv
+- /src/format_data/siswa.csv
+
+Catatan Penting:
+Format file Excel .xlsx (guru.xlsx dan siswa.xlsx) sudah TIDAK lagi didukung untuk mencegah kendala kompatibilitas pembacaan dan sinkronisasi antara versi Excel yang berbeda. Anda tetap dapat membuka dan mengedit file .csv langsung di Microsoft Excel, lalu cukup pilih 'Save' atau 'Save As' -> CSV UTF-8.
+
+1. DATA GURU (guru.csv)
+   - Buka file `guru.csv` menggunakan Microsoft Excel atau Notepad.
+   - Kolom yang disediakan:
+     * nip     : NIP pegawai atau tanda '-' jika non-ASN / honorer
+     * nama    : Nama lengkap guru beserta gelar (contoh: Ahmad Fauzi, S.Pd.)
+     * jabatan : Mata Pelajaran / Tugas Tambahan (contoh: Guru Matematika / Wali Kelas IX-A)
+     * peran   : Peran pencatatan (contoh: Guru Pelapor / Guru BK / Guru Piket)
+
+2. DATA SISWA (siswa.csv)
+   - Buka file `siswa.csv` menggunakan Microsoft Excel.
+   - Kolom yang disediakan:
+     * nis           : Nomor Induk Siswa (contoh: 24001)
+     * nisn          : Nomor Induk Siswa Nasional (contoh: 0104523901)
+     * nama          : Nama lengkap siswa (contoh: ACHMAD ALFIANSAR)
+     * jenis_kelamin : L (Laki-laki) atau P (Perempuan)
+     * kelas         : Rombongan belajar (contoh: VII A, VIII B, IX A)
+
+3. CARA MENYIMPAN DI EXCEL:
+   - Setelah mengedit data, klik File -> Save (atau Save As).
+   - Pastikan tipe file adalah:
+     * "CSV (Comma delimited) (*.csv)" atau "CSV UTF-8 (Comma delimited) (*.csv)".
+   - Program secara otomatis mendukung pemisah koma (,), titik koma (;), maupun tab (\t).
+
+4. SINKRONISASI KE APLIKASI:
+   - Data dari file `guru.csv` dan `siswa.csv` otomatis terbaca oleh program saat mengetik saran nama siswa maupun guru pelapor.
+   - Anda juga dapat menekan tombol reload/segarkan pada form pencatatan pelanggaran atau menu Ekspor/Impor di header aplikasi.

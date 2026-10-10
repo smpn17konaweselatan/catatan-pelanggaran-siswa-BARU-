@@ -17,7 +17,7 @@ export interface TeacherMasterItem {
 }
 
 /**
- * Raw CSV content imported dynamically from /src/db/siswa.csv and /src/db/guru.csv.
+ * Raw CSV content imported dynamically from /src/format_data/siswa.csv and /src/format_data/guru.csv.
  * Updating either CSV file will automatically update student and teacher suggestions.
  */
 export const RAW_STUDENTS_CSV = rawStudentsCsv;
@@ -145,7 +145,7 @@ export function parseTeachersCsv(csvText: string): TeacherMasterItem[] {
   return items;
 }
 
-// Master data lists parsed directly from /src/db/siswa.csv and /src/db/guru.csv
+// Master data lists parsed directly from /src/format_data/siswa.csv and /src/format_data/guru.csv
 export const MASTER_STUDENTS: StudentMasterItem[] = parseStudentsCsv(RAW_STUDENTS_CSV);
 export const MASTER_TEACHERS: TeacherMasterItem[] = parseTeachersCsv(RAW_TEACHERS_CSV);
 

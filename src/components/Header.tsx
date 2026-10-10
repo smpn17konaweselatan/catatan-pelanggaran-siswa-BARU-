@@ -180,8 +180,8 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                       <div>
-                        <div className="font-medium text-emerald-900">Unduh Data Guru (guru.xlsx)</div>
-                        <div className="text-[10px] text-slate-400">File Excel master guru & pelapor</div>
+                        <div className="font-medium text-emerald-900">Unduh Format Guru (guru.csv)</div>
+                        <div className="text-[10px] text-slate-400">File format CSV master guru & pelapor</div>
                       </div>
                     </button>
 
@@ -194,8 +194,8 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
                       <div>
-                        <div className="font-medium text-indigo-900">Unduh Data Siswa (siswa.xlsx)</div>
-                        <div className="text-[10px] text-slate-400">File Excel master siswa & kelas</div>
+                        <div className="font-medium text-indigo-900">Unduh Format Siswa (siswa.csv)</div>
+                        <div className="text-[10px] text-slate-400">File format CSV master siswa & rombel</div>
                       </div>
                     </button>
 

@@ -2,8 +2,6 @@ import initSqlJs from 'sql.js';
 import type { Database, SqlJsStatic } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
-import XLSX_RAW from 'xlsx';
-const XLSX = ((XLSX_RAW as any).readFile ? XLSX_RAW : ((XLSX_RAW as any).default || XLSX_RAW)) as typeof import('xlsx');
 import type { ViolationRecord, SchoolProfile, SanctionStatus, ViolationSeverity, StudentMasterItem, TeacherMasterItem } from '../types/violation.ts';
 
 const DB_FILE_PATH = path.resolve(process.cwd(), 'buku_pelanggaran_sekolah.db');
@@ -63,244 +61,126 @@ export function parseCsvLine(line: string, delimiter: string = ','): string[] {
   return result;
 }
 
-function getNewestMasterFile(baseName: string): { path: string; isXlsx: boolean } | null {
-  const candidates = [
-    path.resolve(process.cwd(), `src/db/${baseName}.xlsx`),
-    path.resolve(process.cwd(), `src/format_data/${baseName}.xlsx`),
-    path.resolve(process.cwd(), `src/db/${baseName}.csv`),
-    path.resolve(process.cwd(), `src/format_data/${baseName}.csv`),
-  ];
-  const existing = candidates.filter(p => fs.existsSync(p));
-  if (existing.length === 0) return null;
-  existing.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  const best = existing[0];
-  return { path: best, isXlsx: best.endsWith('.xlsx') };
+function getMasterCsvPath(baseName: string): string | null {
+  const primary = path.resolve(process.cwd(), `src/format_data/${baseName}.csv`);
+  if (fs.existsSync(primary)) return primary;
+  const fallback = path.resolve(process.cwd(), `src/db/${baseName}.csv`);
+  if (fs.existsSync(fallback)) return fallback;
+  return null;
 }
 
 /**
- * Reads master students from src/db/siswa.xlsx, src/db/siswa.csv, or src/format_data, preferring the newest file.
+ * Reads master students strictly from CSV (/src/format_data/siswa.csv).
+ * Format .xlsx is no longer supported to eliminate version sync and delimiter incompatibilities.
  */
 export function loadMasterStudents(): StudentMasterItem[] {
   try {
-    const fileInfo = getNewestMasterFile('siswa');
-    if (!fileInfo) return [];
+    const csvPath = getMasterCsvPath('siswa');
+    if (!csvPath) return [];
 
-    // Try reading XLSX first if chosen or available
-    if (fileInfo.isXlsx) {
-      try {
-        const workbook = XLSX.readFile(fileInfo.path);
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1, defval: '' });
+    let content = fs.readFileSync(csvPath, 'utf-8');
+    content = content.replace(/^\uFEFF/, '');
+    const delimiter = detectCsvDelimiter(content);
+    const lines = content.trim().split(/\r?\n/);
 
-        if (rawRows.length > 1) {
-          const header: string[] = (rawRows[0] || []).map((h: any) => String(h).trim().toLowerCase());
-          const nisIdx = header.findIndex((h: string) => h === 'nis');
-          const nisnIdx = header.findIndex((h: string) => h.includes('nisn'));
-          const namaIdx = header.findIndex((h: string) => h.includes('nama'));
-          const jkIdx = header.findIndex((h: string) => h.includes('kelamin') || h === 'jk' || h === 'l/p');
-          const kelasIdx = header.findIndex((h: string) => h.includes('kelas') || h.includes('rombel'));
+    if (lines.length > 1) {
+      const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
+      const nisIdx = headerParts.findIndex(h => h === 'nis');
+      const nisnIdx = headerParts.findIndex(h => h.includes('nisn'));
+      const namaIdx = headerParts.findIndex(h => h.includes('nama'));
+      const jkIdx = headerParts.findIndex(h => h.includes('kelamin') || h === 'jk' || h === 'l/p');
+      const kelasIdx = headerParts.findIndex(h => h.includes('kelas') || h.includes('rombel'));
 
-          const actualNisIdx = nisIdx >= 0 ? nisIdx : 0;
-          const actualNisnIdx = nisnIdx >= 0 ? nisnIdx : 1;
-          const actualNamaIdx = namaIdx >= 0 ? namaIdx : 2;
-          const actualJkIdx = jkIdx >= 0 ? jkIdx : 3;
-          const actualKelasIdx = kelasIdx >= 0 ? kelasIdx : 4;
+      const actualNisIdx = nisIdx >= 0 ? nisIdx : 0;
+      const actualNisnIdx = nisnIdx >= 0 ? nisnIdx : 1;
+      const actualNamaIdx = namaIdx >= 0 ? namaIdx : 2;
+      const actualJkIdx = jkIdx >= 0 ? jkIdx : 3;
+      const actualKelasIdx = kelasIdx >= 0 ? kelasIdx : 4;
 
-          const list: StudentMasterItem[] = [];
-          for (let i = 1; i < rawRows.length; i++) {
-            const row = rawRows[i];
-            if (!row || !Array.isArray(row)) continue;
-            const nama = String(row[actualNamaIdx] || '').trim();
-            if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama siswa') continue;
-
-            const jkRaw = String(row[actualJkIdx] || 'L').trim().toUpperCase();
-            list.push({
-              nis: String(row[actualNisIdx] || '').trim(),
-              nisn: String(row[actualNisnIdx] || '').trim(),
-              nama,
-              jenisKelamin: (jkRaw.startsWith('P') ? 'P' : 'L') as 'L' | 'P',
-              kelas: String(row[actualKelasIdx] || 'VII-A').trim()
-            });
-          }
-          if (list.length > 0) {
-            return list;
-          }
+      const list: StudentMasterItem[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        let parts = parseCsvLine(line, delimiter);
+        if (parts.length < 5 && delimiter !== ';') {
+          const semi = parseCsvLine(line, ';');
+          if (semi.length >= 5) parts = semi;
+        } else if (parts.length < 5 && delimiter !== ',') {
+          const comm = parseCsvLine(line, ',');
+          if (comm.length >= 5) parts = comm;
         }
-      } catch (errXlsx) {
-        console.warn('[SQLite] Gagal membaca siswa.xlsx, mencoba file .csv fallback:', errXlsx);
+        const nama = (parts[actualNamaIdx] || '').trim();
+        if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama siswa') continue;
+
+        const jkRaw = (parts[actualJkIdx] || 'L').trim().toUpperCase();
+        list.push({
+          nis: (parts[actualNisIdx] || '').trim(),
+          nisn: (parts[actualNisnIdx] || '').trim(),
+          nama,
+          jenisKelamin: (jkRaw.startsWith('P') ? 'P' : 'L') as 'L' | 'P',
+          kelas: (parts[actualKelasIdx] || 'VII-A').trim()
+        });
       }
-    }
-
-    // Try reading CSV (either because newest is CSV or XLSX read failed)
-    const csvCandidates = [
-      path.resolve(process.cwd(), 'src/db/siswa.csv'),
-      path.resolve(process.cwd(), 'src/format_data/siswa.csv')
-    ].filter(p => fs.existsSync(p));
-
-    if (csvCandidates.length > 0) {
-      csvCandidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-      const csvPath = csvCandidates[0];
-      let content = fs.readFileSync(csvPath, 'utf-8');
-      content = content.replace(/^\uFEFF/, '');
-      const delimiter = detectCsvDelimiter(content);
-      const lines = content.trim().split(/\r?\n/);
-
-      if (lines.length > 1) {
-        const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
-        const nisIdx = headerParts.findIndex(h => h === 'nis');
-        const nisnIdx = headerParts.findIndex(h => h.includes('nisn'));
-        const namaIdx = headerParts.findIndex(h => h.includes('nama'));
-        const jkIdx = headerParts.findIndex(h => h.includes('kelamin') || h === 'jk' || h === 'l/p');
-        const kelasIdx = headerParts.findIndex(h => h.includes('kelas') || h.includes('rombel'));
-
-        const actualNisIdx = nisIdx >= 0 ? nisIdx : 0;
-        const actualNisnIdx = nisnIdx >= 0 ? nisnIdx : 1;
-        const actualNamaIdx = namaIdx >= 0 ? namaIdx : 2;
-        const actualJkIdx = jkIdx >= 0 ? jkIdx : 3;
-        const actualKelasIdx = kelasIdx >= 0 ? kelasIdx : 4;
-
-        const list: StudentMasterItem[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          let parts = parseCsvLine(line, delimiter);
-          if (parts.length < 5 && delimiter !== ';') {
-            const semi = parseCsvLine(line, ';');
-            if (semi.length >= 5) parts = semi;
-          } else if (parts.length < 5 && delimiter !== ',') {
-            const comm = parseCsvLine(line, ',');
-            if (comm.length >= 5) parts = comm;
-          }
-          const nama = (parts[actualNamaIdx] || '').trim();
-          if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama siswa') continue;
-
-          const jkRaw = (parts[actualJkIdx] || 'L').trim().toUpperCase();
-          list.push({
-            nis: (parts[actualNisIdx] || '').trim(),
-            nisn: (parts[actualNisnIdx] || '').trim(),
-            nama,
-            jenisKelamin: (jkRaw.startsWith('P') ? 'P' : 'L') as 'L' | 'P',
-            kelas: (parts[actualKelasIdx] || 'VII-A').trim()
-          });
-        }
-        if (list.length > 0) {
-          return list;
-        }
-      }
+      return list;
     }
   } catch (err) {
-    console.error('[SQLite] Gagal membaca master siswa (.xlsx / .csv):', err);
+    console.error('[SQLite] Gagal membaca master siswa (.csv):', err);
   }
   return [];
 }
 
 /**
- * Reads master teachers from src/db/guru.xlsx, src/db/guru.csv, or src/format_data, preferring the newest file.
+ * Reads master teachers strictly from CSV (/src/format_data/guru.csv).
+ * Format .xlsx is no longer supported to eliminate version sync and delimiter incompatibilities.
  */
 export function loadMasterTeachers(): TeacherMasterItem[] {
   try {
-    const fileInfo = getNewestMasterFile('guru');
-    if (!fileInfo) return [];
+    const csvPath = getMasterCsvPath('guru');
+    if (!csvPath) return [];
 
-    // Try reading XLSX first if chosen or available
-    if (fileInfo.isXlsx) {
-      try {
-        const workbook = XLSX.readFile(fileInfo.path);
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1, defval: '' });
+    let content = fs.readFileSync(csvPath, 'utf-8');
+    content = content.replace(/^\uFEFF/, ''); // Remove BOM if present
+    const delimiter = detectCsvDelimiter(content);
+    const lines = content.trim().split(/\r?\n/);
 
-        if (rawRows.length > 1) {
-          const header: string[] = (rawRows[0] || []).map((h: any) => String(h).trim().toLowerCase());
-          const nipIdx = header.findIndex((h: string) => h.includes('nip'));
-          const namaIdx = header.findIndex((h: string) => h.includes('nama') || h.includes('guru'));
-          const jabatanIdx = header.findIndex((h: string) => h.includes('jabatan') || h.includes('mapel') || h.includes('tugas'));
-          const peranIdx = header.findIndex((h: string) => h.includes('peran') || h.includes('status'));
+    if (lines.length > 1) {
+      const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
+      const nipIdx = headerParts.findIndex(h => h.includes('nip'));
+      const namaIdx = headerParts.findIndex(h => h.includes('nama') || h.includes('guru'));
+      const jabatanIdx = headerParts.findIndex(h => h.includes('jabatan') || h.includes('mapel') || h.includes('tugas'));
+      const peranIdx = headerParts.findIndex(h => h.includes('peran') || h.includes('status'));
 
-          const actualNipIdx = nipIdx >= 0 ? nipIdx : 0;
-          const actualNamaIdx = namaIdx >= 0 ? namaIdx : 1;
-          const actualJabatanIdx = jabatanIdx >= 0 ? jabatanIdx : 2;
-          const actualPeranIdx = peranIdx >= 0 ? peranIdx : 3;
+      const actualNipIdx = nipIdx >= 0 ? nipIdx : 0;
+      const actualNamaIdx = namaIdx >= 0 ? namaIdx : 1;
+      const actualJabatanIdx = jabatanIdx >= 0 ? jabatanIdx : 2;
+      const actualPeranIdx = peranIdx >= 0 ? peranIdx : 3;
 
-          const list: TeacherMasterItem[] = [];
-          for (let i = 1; i < rawRows.length; i++) {
-            const row = rawRows[i];
-            if (!row || !Array.isArray(row)) continue;
-            const nama = String(row[actualNamaIdx] || '').trim();
-            if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama guru') continue;
-
-            list.push({
-              nip: String(row[actualNipIdx] || '-').trim(),
-              nama,
-              jabatan: String(row[actualJabatanIdx] || 'Guru Mata Pelajaran').trim(),
-              peran: String(row[actualPeranIdx] || 'Guru Pelapor').trim()
-            });
-          }
-          if (list.length > 0) {
-            return list;
-          }
+      const list: TeacherMasterItem[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        let parts = parseCsvLine(line, delimiter);
+        if (parts.length < 4 && delimiter !== ';') {
+          const semi = parseCsvLine(line, ';');
+          if (semi.length >= 4) parts = semi;
+        } else if (parts.length < 4 && delimiter !== ',') {
+          const comm = parseCsvLine(line, ',');
+          if (comm.length >= 4) parts = comm;
         }
-      } catch (errXlsx) {
-        console.warn('[SQLite] Gagal membaca guru.xlsx, mencoba file .csv fallback:', errXlsx);
+        const nama = (parts[actualNamaIdx] || '').trim();
+        if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama guru') continue;
+
+        list.push({
+          nip: (parts[actualNipIdx] || '-').trim(),
+          nama,
+          jabatan: (parts[actualJabatanIdx] || 'Guru Mata Pelajaran').trim(),
+          peran: (parts[actualPeranIdx] || 'Guru Pelapor').trim()
+        });
       }
-    }
-
-    // Try reading CSV (either because newest is CSV or XLSX read failed)
-    const csvCandidates = [
-      path.resolve(process.cwd(), 'src/db/guru.csv'),
-      path.resolve(process.cwd(), 'src/format_data/guru.csv')
-    ].filter(p => fs.existsSync(p));
-
-    if (csvCandidates.length > 0) {
-      csvCandidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-      const csvPath = csvCandidates[0];
-      let content = fs.readFileSync(csvPath, 'utf-8');
-      content = content.replace(/^\uFEFF/, ''); // Remove BOM if present
-      const delimiter = detectCsvDelimiter(content);
-      const lines = content.trim().split(/\r?\n/);
-
-      if (lines.length > 1) {
-        const headerParts = parseCsvLine(lines[0], delimiter).map(h => h.toLowerCase());
-        const nipIdx = headerParts.findIndex(h => h.includes('nip'));
-        const namaIdx = headerParts.findIndex(h => h.includes('nama') || h.includes('guru'));
-        const jabatanIdx = headerParts.findIndex(h => h.includes('jabatan') || h.includes('mapel') || h.includes('tugas'));
-        const peranIdx = headerParts.findIndex(h => h.includes('peran') || h.includes('status'));
-
-        const actualNipIdx = nipIdx >= 0 ? nipIdx : 0;
-        const actualNamaIdx = namaIdx >= 0 ? namaIdx : 1;
-        const actualJabatanIdx = jabatanIdx >= 0 ? jabatanIdx : 2;
-        const actualPeranIdx = peranIdx >= 0 ? peranIdx : 3;
-
-        const list: TeacherMasterItem[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          let parts = parseCsvLine(line, delimiter);
-          if (parts.length < 4 && delimiter !== ';') {
-            const semi = parseCsvLine(line, ';');
-            if (semi.length >= 4) parts = semi;
-          } else if (parts.length < 4 && delimiter !== ',') {
-            const comm = parseCsvLine(line, ',');
-            if (comm.length >= 4) parts = comm;
-          }
-          const nama = (parts[actualNamaIdx] || '').trim();
-          if (!nama || nama.toLowerCase() === 'nama' || nama.toLowerCase() === 'nama guru') continue;
-
-          list.push({
-            nip: (parts[actualNipIdx] || '-').trim(),
-            nama,
-            jabatan: (parts[actualJabatanIdx] || 'Guru Mata Pelajaran').trim(),
-            peran: (parts[actualPeranIdx] || 'Guru Pelapor').trim()
-          });
-        }
-        if (list.length > 0) {
-          return list;
-        }
-      }
+      return list;
     }
   } catch (err) {
-    console.error('[SQLite] Gagal membaca master guru (.xlsx / .csv):', err);
+    console.error('[SQLite] Gagal membaca master guru (.csv):', err);
   }
   return [];
 }
@@ -690,7 +570,7 @@ export async function getSqliteTeachers(): Promise<TeacherMasterItem[]> {
 
   if (fileTeachers.length > 0) {
     try {
-      // Refresh SQLite teachers table with latest records from disk (.xlsx / .csv)
+      // Refresh SQLite teachers table with latest records from disk (.csv)
       database.run('DELETE FROM teachers;');
       const insertTeacher = database.prepare(`
         INSERT INTO teachers (nip, nama, jabatan, peran)

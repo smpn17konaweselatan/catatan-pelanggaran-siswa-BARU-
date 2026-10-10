@@ -115,51 +115,57 @@ app.get('/api/teachers', async (req, res) => {
   }
 });
 
-// API: Download master guru.xlsx file
-app.get('/api/master/download/guru.xlsx', (req, res) => {
-  const xlsxPath = path.resolve(process.cwd(), 'src/db/guru.xlsx');
-  if (fs.existsSync(xlsxPath)) {
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="guru.xlsx"');
-    return res.sendFile(xlsxPath);
+// API: Download master guru.csv file (and legacy guru.xlsx alias)
+app.get(['/api/master/download/guru.csv', '/api/master/download/guru.xlsx'], (req, res) => {
+  const csvPath = path.resolve(process.cwd(), 'src/format_data/guru.csv');
+  const fallbackPath = path.resolve(process.cwd(), 'src/db/guru.csv');
+  const target = fs.existsSync(csvPath) ? csvPath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
+  if (target) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="guru.csv"');
+    return res.sendFile(target);
   }
-  res.status(404).json({ error: 'File guru.xlsx tidak ditemukan di src/db/' });
+  res.status(404).json({ error: 'File guru.csv tidak ditemukan di src/format_data/' });
 });
 
-// API: Download master siswa.xlsx file
-app.get('/api/master/download/siswa.xlsx', (req, res) => {
-  const xlsxPath = path.resolve(process.cwd(), 'src/db/siswa.xlsx');
-  if (fs.existsSync(xlsxPath)) {
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="siswa.xlsx"');
-    return res.sendFile(xlsxPath);
+// API: Download master siswa.csv file (and legacy siswa.xlsx alias)
+app.get(['/api/master/download/siswa.csv', '/api/master/download/siswa.xlsx'], (req, res) => {
+  const csvPath = path.resolve(process.cwd(), 'src/format_data/siswa.csv');
+  const fallbackPath = path.resolve(process.cwd(), 'src/db/siswa.csv');
+  const target = fs.existsSync(csvPath) ? csvPath : (fs.existsSync(fallbackPath) ? fallbackPath : null);
+  if (target) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="siswa.csv"');
+    return res.sendFile(target);
   }
-  res.status(404).json({ error: 'File siswa.xlsx tidak ditemukan di src/db/' });
+  res.status(404).json({ error: 'File siswa.csv tidak ditemukan di src/format_data/' });
 });
 
-// API: Upload / replace master teachers file (.xlsx or .csv)
+// API: Upload / replace master teachers file (.csv only)
 app.post('/api/master/upload/guru', async (req, res) => {
   try {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'File master guru tidak valid atau kosong.' });
     }
-    const isZipOrXlsx = req.body[0] === 0x50 && req.body[1] === 0x4B; // 'PK' magic bytes
+    const isZipOrXlsx = req.body[0] === 0x50 && req.body[1] === 0x4B; // 'PK' magic bytes of zip/xlsx
     if (isZipOrXlsx) {
-      const dest = path.resolve(process.cwd(), 'src/db/guru.xlsx');
-      fs.writeFileSync(dest, req.body);
-    } else {
-      const dest = path.resolve(process.cwd(), 'src/db/guru.csv');
-      fs.writeFileSync(dest, req.body);
+      return res.status(400).json({
+        error: 'Format .xlsx tidak lagi didukung karena kendala kompatibilitas berbagai versi Excel. Silakan simpan file dari Excel sebagai CSV UTF-8 (.csv) dan unggah kembali.'
+      });
     }
+
+    const dest = path.resolve(process.cwd(), 'src/format_data/guru.csv');
+    fs.writeFileSync(dest, req.body);
+
     const refreshed = await getSqliteTeachers();
-    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data guru / petugas pelapor!` });
+    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data guru / petugas pelapor dari guru.csv!` });
   } catch (error: any) {
     console.error('[Master] Error uploading guru:', error);
     res.status(500).json({ error: error.message || 'Gagal menyimpan file master guru.' });
   }
 });
 
-// API: Upload / replace master students file (.xlsx or .csv)
+// API: Upload / replace master students file (.csv only)
 app.post('/api/master/upload/siswa', async (req, res) => {
   try {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
@@ -167,14 +173,16 @@ app.post('/api/master/upload/siswa', async (req, res) => {
     }
     const isZipOrXlsx = req.body[0] === 0x50 && req.body[1] === 0x4B;
     if (isZipOrXlsx) {
-      const dest = path.resolve(process.cwd(), 'src/db/siswa.xlsx');
-      fs.writeFileSync(dest, req.body);
-    } else {
-      const dest = path.resolve(process.cwd(), 'src/db/siswa.csv');
-      fs.writeFileSync(dest, req.body);
+      return res.status(400).json({
+        error: 'Format .xlsx tidak lagi didukung karena kendala kompatibilitas berbagai versi Excel. Silakan simpan file dari Excel sebagai CSV UTF-8 (.csv) dan unggah kembali.'
+      });
     }
+
+    const dest = path.resolve(process.cwd(), 'src/format_data/siswa.csv');
+    fs.writeFileSync(dest, req.body);
+
     const refreshed = await getSqliteStudents();
-    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data siswa!` });
+    res.json({ success: true, count: refreshed.length, message: `Berhasil memuat ${refreshed.length} data siswa dari siswa.csv!` });
   } catch (error: any) {
     console.error('[Master] Error uploading siswa:', error);
     res.status(500).json({ error: error.message || 'Gagal menyimpan file master siswa.' });

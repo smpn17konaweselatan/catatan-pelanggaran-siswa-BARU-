@@ -124,27 +124,29 @@ export function downloadSqlDatabaseFile() {
   document.body.removeChild(a);
 }
 
-// Download Master Guru Excel (.xlsx)
-export function downloadMasterTeachersExcel() {
+// Download Master Guru CSV (.csv)
+export function downloadMasterTeachersCsv() {
   const a = document.createElement('a');
-  a.href = '/api/master/download/guru.xlsx';
-  a.download = 'guru.xlsx';
+  a.href = '/api/master/download/guru.csv';
+  a.download = 'guru.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
+export const downloadMasterTeachersExcel = downloadMasterTeachersCsv;
 
-// Download Master Siswa Excel (.xlsx)
-export function downloadMasterStudentsExcel() {
+// Download Master Siswa CSV (.csv)
+export function downloadMasterStudentsCsv() {
   const a = document.createElement('a');
-  a.href = '/api/master/download/siswa.xlsx';
-  a.download = 'siswa.xlsx';
+  a.href = '/api/master/download/siswa.csv';
+  a.download = 'siswa.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
+export const downloadMasterStudentsExcel = downloadMasterStudentsCsv;
 
-// Upload & replace Master Guru (.xlsx / .csv)
+// Upload & replace Master Guru (.csv)
 export async function uploadMasterTeachersFile(file: File): Promise<{ count: number; message: string }> {
   const buffer = await file.arrayBuffer();
   const res = await fetch('/api/master/upload/guru', {
@@ -159,7 +161,7 @@ export async function uploadMasterTeachersFile(file: File): Promise<{ count: num
   return await res.json();
 }
 
-// Upload & replace Master Siswa (.xlsx / .csv)
+// Upload & replace Master Siswa (.csv)
 export async function uploadMasterStudentsFile(file: File): Promise<{ count: number; message: string }> {
   const buffer = await file.arrayBuffer();
   const res = await fetch('/api/master/upload/siswa', {

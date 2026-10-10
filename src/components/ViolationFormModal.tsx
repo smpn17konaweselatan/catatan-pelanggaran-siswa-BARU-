@@ -356,7 +356,7 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
                   <button
                     type="button"
                     onClick={loadMasterData}
-                    title="Segarkan data siswa dari src/db/siswa.xlsx atau siswa.csv"
+                    title="Segarkan data siswa dari src/format_data/siswa.csv"
                     className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
                   >
                     <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
@@ -666,7 +666,7 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
                   <button
                     type="button"
                     onClick={loadMasterData}
-                    title="Segarkan data guru dari src/db/guru.xlsx atau guru.csv"
+                    title="Segarkan data guru dari src/format_data/guru.csv"
                     className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
                   >
                     <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
