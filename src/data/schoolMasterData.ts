@@ -1,5 +1,5 @@
-import rawStudentsCsv from '../db/siswa.csv?raw';
-import rawTeachersCsv from '../db/guru.csv?raw';
+import rawStudentsCsv from '../format_data/siswa.csv?raw';
+import rawTeachersCsv from '../format_data/guru.csv?raw';
 
 export interface StudentMasterItem {
   nis: string;
