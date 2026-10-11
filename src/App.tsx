@@ -13,6 +13,7 @@ import { WindowsDesktopModal } from './components/WindowsDesktopModal';
 import { ViolationRecord, SchoolProfile, SanctionStatus } from './types/violation';
 import { INITIAL_VIOLATIONS } from './data/initialViolations';
 import { DEFAULT_SCHOOL_PROFILE } from './data/rulesCatalog';
+import { subscribeMasterData } from './data/schoolMasterData';
 import { exportViolationsToCSV, downloadBlankTemplateCSV } from './utils/csvExport';
 import { 
   fetchViolationsFromSql, 
@@ -103,6 +104,26 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
   }, [profile]);
+
+  // Subscribe to live master data updates (e.g. when user edits siswa.csv / guru.csv in Electron format_data folder)
+  useEffect(() => {
+    const unsub = subscribeMasterData((info) => {
+      if (info.source === 'electron-external') {
+        showToast(`Master data diperbarui otomatis: ${info.studentsCount} siswa & ${info.teachersCount} guru terdeteksi.`);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Listen to native Electron menu toast events
+  useEffect(() => {
+    if (window.electronAPI?.onToastNotification) {
+      const unsub = window.electronAPI.onToastNotification((data) => {
+        if (data.message) showToast(data.message);
+      });
+      return unsub;
+    }
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);

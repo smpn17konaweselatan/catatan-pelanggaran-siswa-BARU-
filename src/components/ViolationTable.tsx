@@ -9,7 +9,7 @@ import {
   INITIAL_DISCIPLINE_BALANCE, 
   DisciplineLevel 
 } from '../utils/balanceCalculator';
-import { MASTER_STUDENTS } from '../data/schoolMasterData';
+import { MASTER_STUDENTS, subscribeMasterData } from '../data/schoolMasterData';
 import { 
   Search, 
   Filter, 
@@ -74,6 +74,16 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
     return map;
   }, [records]);
 
+  // Dynamic master data version state to trigger map re-evaluation
+  const [masterVersion, setMasterVersion] = useState(0);
+
+  React.useEffect(() => {
+    const unsub = subscribeMasterData(() => {
+      setMasterVersion(v => v + 1);
+    });
+    return unsub;
+  }, []);
+
   // Lookup map for student NISN from master data
   const studentNisnMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -83,7 +93,7 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
       }
     });
     return map;
-  }, []);
+  }, [masterVersion]);
 
   // Extract unique classes for filter
   const classList = useMemo(() => {

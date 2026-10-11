@@ -1,5 +1,11 @@
 import { ViolationRecord, SchoolProfile } from '../types/violation.ts';
-import { MASTER_STUDENTS, MASTER_TEACHERS, StudentMasterItem, TeacherMasterItem } from '../data/schoolMasterData.ts';
+import { 
+  MASTER_STUDENTS, 
+  MASTER_TEACHERS, 
+  StudentMasterItem, 
+  TeacherMasterItem,
+  syncMasterDataFromSource
+} from '../data/schoolMasterData.ts';
 
 export async function fetchViolationsFromSql(): Promise<ViolationRecord[]> {
   const res = await fetch('/api/violations');
@@ -10,26 +16,40 @@ export async function fetchViolationsFromSql(): Promise<ViolationRecord[]> {
 }
 
 export async function fetchStudentsFromSql(): Promise<StudentMasterItem[]> {
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+    await syncMasterDataFromSource();
+    return [...MASTER_STUDENTS];
+  }
   try {
     const res = await fetch('/api/students');
-    if (!res.ok) return MASTER_STUDENTS;
+    if (!res.ok) {
+      await syncMasterDataFromSource();
+      return [...MASTER_STUDENTS];
+    }
     const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : MASTER_STUDENTS;
+    return Array.isArray(data) && data.length > 0 ? data : [...MASTER_STUDENTS];
   } catch (e) {
-    console.warn('Could not fetch students from API, using master student list:', e);
-    return MASTER_STUDENTS;
+    await syncMasterDataFromSource();
+    return [...MASTER_STUDENTS];
   }
 }
 
 export async function fetchTeachersFromSql(): Promise<TeacherMasterItem[]> {
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+    await syncMasterDataFromSource();
+    return [...MASTER_TEACHERS];
+  }
   try {
     const res = await fetch('/api/teachers');
-    if (!res.ok) return MASTER_TEACHERS;
+    if (!res.ok) {
+      await syncMasterDataFromSource();
+      return [...MASTER_TEACHERS];
+    }
     const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : MASTER_TEACHERS;
+    return Array.isArray(data) && data.length > 0 ? data : [...MASTER_TEACHERS];
   } catch (e) {
-    console.warn('Could not fetch teachers from API, using master teacher list:', e);
-    return MASTER_TEACHERS;
+    await syncMasterDataFromSource();
+    return [...MASTER_TEACHERS];
   }
 }
 

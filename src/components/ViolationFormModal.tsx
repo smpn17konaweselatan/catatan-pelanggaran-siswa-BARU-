@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Check, BookOpen, AlertCircle, User, GraduationCap, CheckCircle2, ChevronDown, RotateCcw } from 'lucide-react';
+import { X, Check, BookOpen, AlertCircle, User, GraduationCap, CheckCircle2, ChevronDown, RotateCcw, FolderOpen } from 'lucide-react';
 import { ViolationRecord, ViolationSeverity, SanctionStatus } from '../types/violation';
 import { STANDARD_RULES_CATALOG } from '../data/rulesCatalog';
-import { MASTER_STUDENTS, MASTER_TEACHERS, StudentMasterItem, TeacherMasterItem } from '../data/schoolMasterData';
+import { 
+  MASTER_STUDENTS, 
+  MASTER_TEACHERS, 
+  StudentMasterItem, 
+  TeacherMasterItem,
+  subscribeMasterData,
+  openFormatDataFolderInExplorer,
+  getMasterSyncInfo,
+  syncMasterDataFromSource
+} from '../data/schoolMasterData';
 import { fetchStudentsFromSql, fetchTeachersFromSql } from '../services/api';
 import { INITIAL_DISCIPLINE_BALANCE, getDisciplineLevelInfo } from '../utils/balanceCalculator';
 
@@ -60,7 +69,7 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
 
   const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
 
-  // Load students & teachers from SQLite backend whenever modal opens
+  // Load students & teachers from SQLite backend / Electron format_data whenever modal opens
   const loadMasterData = async () => {
     setIsRefreshingMaster(true);
     try {
@@ -76,6 +85,15 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
       setIsRefreshingMaster(false);
     }
   };
+
+  // Keep student & teacher lists synchronized with dynamic updates
+  useEffect(() => {
+    const unsub = subscribeMasterData(() => {
+      setStudentsList([...MASTER_STUDENTS]);
+      setTeachersList([...MASTER_TEACHERS]);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -353,15 +371,28 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
                   <label className="block text-xs font-medium text-slate-700">
                     Nama Lengkap Siswa <span className="text-rose-500">*</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={loadMasterData}
-                    title="Segarkan data siswa dari src/format_data/siswa.csv"
-                    className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
-                  >
-                    <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
-                    <span>{studentsList.length} siswa</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {typeof window !== 'undefined' && window.electronAPI?.isElectron && (
+                      <button
+                        type="button"
+                        onClick={openFormatDataFolderInExplorer}
+                        title="Buka folder resources/format_data di Windows Explorer"
+                        className="text-[10px] text-slate-500 hover:text-indigo-700 flex items-center gap-1 cursor-pointer font-medium"
+                      >
+                        <FolderOpen className="w-2.5 h-2.5" />
+                        <span className="hidden sm:inline">Folder Data</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={loadMasterData}
+                      title="Segarkan data siswa dari format_data/siswa.csv"
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
+                    >
+                      <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
+                      <span>{studentsList.length} siswa</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <input
@@ -663,15 +694,28 @@ export const ViolationFormModal: React.FC<ViolationFormModalProps> = ({
                   <label className="block text-xs font-medium text-slate-700">
                     Guru / Petugas Pelapor
                   </label>
-                  <button
-                    type="button"
-                    onClick={loadMasterData}
-                    title="Segarkan data guru dari src/format_data/guru.csv"
-                    className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
-                  >
-                    <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
-                    <span>{teachersList.length} guru</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {typeof window !== 'undefined' && window.electronAPI?.isElectron && (
+                      <button
+                        type="button"
+                        onClick={openFormatDataFolderInExplorer}
+                        title="Buka folder resources/format_data di Windows Explorer"
+                        className="text-[10px] text-slate-500 hover:text-indigo-700 flex items-center gap-1 cursor-pointer font-medium"
+                      >
+                        <FolderOpen className="w-2.5 h-2.5" />
+                        <span className="hidden sm:inline">Folder Data</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={loadMasterData}
+                      title="Segarkan data guru dari format_data/guru.csv"
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer font-medium"
+                    >
+                      <RotateCcw className={`w-2.5 h-2.5 ${isRefreshingMaster ? 'animate-spin' : ''}`} />
+                      <span>{teachersList.length} guru</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <input

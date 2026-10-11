@@ -110,12 +110,12 @@ PILIHAN 1: JALANKAN DENGAN 1-KLIK (FILE BATCH)
    "jalankan-aplikasi-windows.bat"
 4. Aplikasi akan otomatis membuka jendela desktop mandiri di http://localhost:3000.
 
-PILIHAN 2: BUILD MENJADI FILE INSTALLER .EXE (MANDIRI)
-1. Buka folder ini di Command Prompt / Terminal.
-2. Jalankan perintah:
-   npm install -D electron electron-builder
-   npm run build && npx electron-builder --win
-3. File instalasi Windows .exe akan otomatis tersimpan di folder "dist-electron".
+PILIHAN 2: BUILD MENJADI FILE INSTALLER .EXE (ELECTRON BUILDER)
+1. Cukup klik dua kali (double-click) pada file:
+   "build-windows-exe.bat"
+   atau buka Command Prompt lalu jalankan:
+   npm run build:win
+2. File installer Windows .exe (Setup & Portable) otomatis tersimpan di folder "dist-electron".
 
 PILIHAN 3: INSTALASI VIA BROWSER (PWA - 1 DETIK TANPA NODE.JS)
 Buka aplikasi di Google Chrome atau Microsoft Edge, lalu klik ikon "Instal Aplikasi" 
@@ -131,6 +131,7 @@ di sebelah kanan kolom URL browser. Aplikasi langsung terpasang di Desktop & Sta
     'tsconfig.json',
     'electron-builder.json',
     'electron/main.cjs',
+    'build-windows-exe.bat',
     'src/main.tsx',
     'src/App.tsx',
     'src/index.css',

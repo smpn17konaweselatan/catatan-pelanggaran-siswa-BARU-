@@ -146,8 +146,192 @@ export function parseTeachersCsv(csvText: string): TeacherMasterItem[] {
 }
 
 // Master data lists parsed directly from /src/format_data/siswa.csv and /src/format_data/guru.csv
-export const MASTER_STUDENTS: StudentMasterItem[] = parseStudentsCsv(RAW_STUDENTS_CSV);
-export const MASTER_TEACHERS: TeacherMasterItem[] = parseTeachersCsv(RAW_TEACHERS_CSV);
+// These arrays are mutated in-place when updated from external files or SQLite backend
+const initialStudentsCsv = (typeof window !== 'undefined' && localStorage.getItem('bk_cached_students_csv')) || RAW_STUDENTS_CSV;
+const initialTeachersCsv = (typeof window !== 'undefined' && localStorage.getItem('bk_cached_teachers_csv')) || RAW_TEACHERS_CSV;
+
+export const MASTER_STUDENTS: StudentMasterItem[] = parseStudentsCsv(initialStudentsCsv);
+export const MASTER_TEACHERS: TeacherMasterItem[] = parseTeachersCsv(initialTeachersCsv);
+
+export interface MasterSyncInfo {
+  studentsCount: number;
+  teachersCount: number;
+  source: 'electron-external' | 'sqlite' | 'bundled-csv' | 'local-cache';
+  sourceDir?: string;
+  studentsFilePath?: string | null;
+  teachersFilePath?: string | null;
+  lastUpdated: number;
+}
+
+let currentSyncInfo: MasterSyncInfo = {
+  studentsCount: MASTER_STUDENTS.length,
+  teachersCount: MASTER_TEACHERS.length,
+  source: typeof window !== 'undefined' && localStorage.getItem('bk_cached_students_csv') ? 'local-cache' : 'bundled-csv',
+  lastUpdated: Date.now(),
+};
+
+type MasterDataListener = (info: MasterSyncInfo) => void;
+const listeners = new Set<MasterDataListener>();
+
+export function subscribeMasterData(listener: MasterDataListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyListeners() {
+  currentSyncInfo = {
+    ...currentSyncInfo,
+    studentsCount: MASTER_STUDENTS.length,
+    teachersCount: MASTER_TEACHERS.length,
+    lastUpdated: Date.now(),
+  };
+  listeners.forEach((fn) => {
+    try {
+      fn(currentSyncInfo);
+    } catch (err) {
+      console.error('[MasterData] Listener error:', err);
+    }
+  });
+}
+
+/**
+ * Update the in-memory MASTER_STUDENTS and MASTER_TEACHERS arrays in-place
+ */
+export function updateMasterDataArrays(
+  studentsCsv?: string | null,
+  teachersCsv?: string | null,
+  metadata?: Partial<MasterSyncInfo>
+): boolean {
+  let changed = false;
+
+  if (studentsCsv && studentsCsv.trim().length > 0) {
+    const parsedStudents = parseStudentsCsv(studentsCsv);
+    if (parsedStudents.length > 0) {
+      MASTER_STUDENTS.length = 0;
+      MASTER_STUDENTS.push(...parsedStudents);
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('bk_cached_students_csv', studentsCsv); } catch (_) {}
+      }
+      changed = true;
+    }
+  }
+
+  if (teachersCsv && teachersCsv.trim().length > 0) {
+    const parsedTeachers = parseTeachersCsv(teachersCsv);
+    if (parsedTeachers.length > 0) {
+      MASTER_TEACHERS.length = 0;
+      MASTER_TEACHERS.push(...parsedTeachers);
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('bk_cached_teachers_csv', teachersCsv); } catch (_) {}
+      }
+      changed = true;
+    }
+  }
+
+  if (changed || metadata) {
+    currentSyncInfo = {
+      ...currentSyncInfo,
+      ...metadata,
+      studentsCount: MASTER_STUDENTS.length,
+      teachersCount: MASTER_TEACHERS.length,
+      lastUpdated: Date.now(),
+    };
+    notifyListeners();
+  }
+
+  return changed;
+}
+
+export function getMasterSyncInfo(): MasterSyncInfo {
+  return { ...currentSyncInfo };
+}
+
+/**
+ * Synchronize master data from external files (Electron resources/format_data) or backend
+ */
+export async function syncMasterDataFromSource(): Promise<MasterSyncInfo> {
+  // 1. If running inside Electron desktop app, read directly from resources/format_data
+  if (typeof window !== 'undefined' && window.electronAPI?.getMasterData) {
+    try {
+      const data = await window.electronAPI.getMasterData();
+      if (data && (data.studentsCsv || data.teachersCsv)) {
+        updateMasterDataArrays(data.studentsCsv, data.teachersCsv, {
+          source: 'electron-external',
+          sourceDir: data.formatDataDir,
+          studentsFilePath: data.studentsFilePath,
+          teachersFilePath: data.teachersFilePath,
+        });
+        return getMasterSyncInfo();
+      }
+    } catch (err) {
+      console.warn('[MasterData] Failed to read from Electron format_data:', err);
+    }
+  }
+
+  // 2. Fallback to API endpoint if running in web/server mode
+  if (typeof window !== 'undefined' && !window.electronAPI?.isElectron) {
+    try {
+      const [stuRes, teaRes] = await Promise.allSettled([
+        fetch('/api/master/download/siswa.csv').then(r => r.ok ? r.text() : null),
+        fetch('/api/master/download/guru.csv').then(r => r.ok ? r.text() : null),
+      ]);
+      const stuCsv = stuRes.status === 'fulfilled' ? stuRes.value : null;
+      const teaCsv = teaRes.status === 'fulfilled' ? teaRes.value : null;
+      if (stuCsv || teaCsv) {
+        updateMasterDataArrays(stuCsv, teaCsv, {
+          source: 'sqlite',
+        });
+        return getMasterSyncInfo();
+      }
+    } catch (_) {}
+  }
+
+  return getMasterSyncInfo();
+}
+
+/**
+ * Open format_data folder in Windows Explorer (Desktop Edition)
+ */
+export async function openFormatDataFolderInExplorer(): Promise<boolean> {
+  if (typeof window !== 'undefined' && window.electronAPI?.openFormatDataFolder) {
+    try {
+      const result = await window.electronAPI.openFormatDataFolder();
+      return result?.success ?? false;
+    } catch (e) {
+      console.warn('[MasterData] Could not open format_data in explorer:', e);
+    }
+  }
+  return false;
+}
+
+// Auto-initialize Electron synchronization and file watcher subscription
+if (typeof window !== 'undefined') {
+  // Immediate sync on load
+  setTimeout(() => {
+    syncMasterDataFromSource();
+  }, 100);
+
+  // Subscribe to live file updates pushed by Electron main process
+  if (window.electronAPI?.onMasterDataUpdated) {
+    window.electronAPI.onMasterDataUpdated((data) => {
+      if (data && (data.studentsCsv || data.teachersCsv)) {
+        updateMasterDataArrays(data.studentsCsv, data.teachersCsv, {
+          source: 'electron-external',
+          sourceDir: data.formatDataDir,
+          studentsFilePath: data.studentsFilePath,
+          teachersFilePath: data.teachersFilePath,
+        });
+      }
+    });
+  }
+
+  // Sync when window refocuses (e.g. user edited in Excel/Notepad and switched back)
+  window.addEventListener('focus', () => {
+    syncMasterDataFromSource();
+  });
+}
 
 export function searchStudents(query: string, limit = 10): StudentMasterItem[] {
   const q = query.trim().toLowerCase();
@@ -171,3 +355,4 @@ export function searchTeachers(query: string, limit = 8): TeacherMasterItem[] {
     t.peran.toLowerCase().includes(q)
   ).slice(0, limit);
 }
+

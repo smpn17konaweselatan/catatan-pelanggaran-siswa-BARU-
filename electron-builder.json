@@ -1,24 +1,51 @@
 {
-  "appId": "id.sch.smpn17konsel.bukupelanggaran",
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "id.sch.smpn17konaweselatan.bukupelanggaran",
   "productName": "Buku Catatan Pelanggaran Siswa",
   "copyright": "Copyright © 2026 SMP Negeri 17 Konawe Selatan",
   "directories": {
-    "output": "dist-electron"
+    "output": "dist-electron",
+    "buildResources": "public"
   },
   "files": [
     "dist/**/*",
     "electron/**/*",
+    "public/**/*",
     "package.json"
   ],
+  "extraResources": [
+    {
+      "from": "src/format_data",
+      "to": "format_data",
+      "filter": ["*.csv", "*.txt", "*.svg", "*.tsv", "*.CSV", "*.TXT", "*.SVG"]
+    }
+  ],
   "win": {
-    "target": ["nsis", "portable"],
-    "icon": "public/pwa-512x512.png"
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/pwa-512x512.png",
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
+    "perMachine": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Buku Catatan Pelanggaran Siswa"
+    "shortcutName": "Buku Pelanggaran Siswa",
+    "uninstallDisplayName": "Buku Catatan Pelanggaran Siswa - SMPN 17 Konawe Selatan",
+    "deleteAppDataOnUninstall": false,
+    "runAfterFinish": true
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
   }
 }

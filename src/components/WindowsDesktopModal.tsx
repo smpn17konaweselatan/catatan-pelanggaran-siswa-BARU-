@@ -367,37 +367,52 @@ pause
 
           {activeTab === 'exe' && (
             <div className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+              <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <Laptop className="w-4 h-4 text-indigo-700" />
                   <span className="font-bold text-slate-800 text-xs">
-                    Build Menjadi File Installer Windows (.exe) Mandiri
+                    Rancangan & Konfigurasi Build Windows EXE (.exe) dengan Electron Builder
                   </span>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed">
-                  Jika Anda ingin mengemas aplikasi ini menjadi file installer <code>.exe</code> tunggal untuk dibagikan ke seluruh dewan guru melalui flashdisk, gunakan <strong>Electron Builder</strong>:
+                  Proyek ini telah dikonfigurasi penuh dengan berkas <code>electron-builder.json</code>, skrip utama <code>electron/main.cjs</code>, dan <code>build-windows-exe.bat</code>. Anda dapat menghasilkan file <strong>Setup Installer (.exe)</strong> maupun <strong>Portable (.exe)</strong> yang siap dibagikan via flashdisk.
                 </p>
               </div>
 
+              {/* METODE 1: 1-KLIK VIA BATCH */}
+              <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded">Cara Termudah</span>
+                    <strong className="text-slate-800 text-xs">Cara 1: Menggunakan Berkas Otomatis <code>build-windows-exe.bat</code></strong>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Di dalam file ZIP proyek yang Anda unduh, cukup klik dua kali (double-click) pada file <strong><code>build-windows-exe.bat</code></strong>. Skrip ini akan otomatis memeriksa Node.js, memasang dependensi, menjalankan Vite build, dan memicu <code>electron-builder</code> hingga membuka folder hasil build.
+                </p>
+              </div>
+
+              {/* METODE 2: VIA CMD / TERMINAL */}
               <div className="space-y-3">
                 <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-2">
                   <strong className="text-slate-800 block font-semibold text-xs">
-                    Langkah 1: Buka Folder Proyek di CMD / Terminal
+                    Cara 2: Melalui Terminal / Command Prompt
                   </strong>
                   <p className="text-[11px] text-slate-500">
-                    Pastikan Anda berada di dalam folder yang memiliki berkas <code>package.json</code>.
+                    Buka Command Prompt pada folder proyek, lalu gunakan perintah cepat berikut:
                   </p>
                 </div>
 
                 <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-2">
-                  <strong className="text-slate-800 block font-semibold text-xs">
-                    Langkah 2: Pasang Paket Electron Builder
-                  </strong>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-700 text-xs">A. Pasang Paket Electron & Builder (hanya sekali):</strong>
+                  </div>
                   <div className="bg-slate-900 text-slate-200 p-2.5 rounded font-mono text-[11px] flex justify-between items-center">
                     <code>npm install -D electron electron-builder</code>
                     <button
                       onClick={() => handleCopy('npm install -D electron electron-builder', 'inst-elec')}
                       className="text-slate-400 hover:text-white"
+                      title="Salin perintah"
                     >
                       {copiedCmd === 'inst-elec' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
@@ -405,21 +420,75 @@ pause
                 </div>
 
                 <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-2">
-                  <strong className="text-slate-800 block font-semibold text-xs">
-                    Langkah 3: Jalankan Build ke Windows (.exe)
-                  </strong>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-700 text-xs">B. Build Lengkap (Installer NSIS + Portable .exe):</strong>
+                  </div>
                   <div className="bg-slate-900 text-slate-200 p-2.5 rounded font-mono text-[11px] flex justify-between items-center">
-                    <code>npm run build && npx electron-builder --win</code>
+                    <code>npm run build:win</code>
                     <button
-                      onClick={() => handleCopy('npm run build && npx electron-builder --win', 'build-elec')}
+                      onClick={() => handleCopy('npm run build:win', 'build-all')}
                       className="text-slate-400 hover:text-white"
+                      title="Salin perintah"
                     >
-                      {copiedCmd === 'build-elec' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedCmd === 'build-all' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    File installer Windows <code>.exe</code> akan otomatis tersimpan di folder <code>dist-electron/</code>.
+                </div>
+
+                <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-2">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-700 text-xs">C. Hanya Build Versi Portable (Tanpa Install):</strong>
+                  </div>
+                  <div className="bg-slate-900 text-slate-200 p-2.5 rounded font-mono text-[11px] flex justify-between items-center">
+                    <code>npm run build:win:portable</code>
+                    <button
+                      onClick={() => handleCopy('npm run build:win:portable', 'build-port')}
+                      className="text-slate-400 hover:text-white"
+                      title="Salin perintah"
+                    >
+                      {copiedCmd === 'build-port' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* HASIL KELUARAN */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 text-xs text-slate-600">
+                  <strong className="text-slate-800 block font-semibold text-xs">
+                    📁 Lokasi & Berkas Hasil Keluaran:
+                  </strong>
+                  <p>Semua file binary Windows akan tersimpan rapi di dalam folder <strong><code>dist-electron/</code></strong>:</p>
+                  <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-700">
+                    <li>
+                      <strong><code>Buku Catatan Pelanggaran Siswa-1.0.0-x64.exe</code></strong>: Wizard instalasi Windows (NSIS) dengan opsi shortcut Desktop dan Start Menu.
+                    </li>
+                    <li>
+                      <strong><code>Buku Catatan Pelanggaran Siswa-Portable-1.0.0.exe</code></strong>: Versi Portable tunggal, dapat langsung diklik dan dijalankan dari flashdisk tanpa perlu diinstal.
+                    </li>
+                  </ul>
+                </div>
+
+                {/* SINKRONISASI FORMAT DATA SISWA & GURU */}
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">Penting</span>
+                    <strong className="text-slate-800 text-xs">
+                      Mengubah Data Siswa & Guru di Komputer Windows (resources\format_data):
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-700 leading-relaxed">
+                    Setelah aplikasi terpasang di komputer Anda (misal di <code>D:\...\resources\format_data\</code>), aplikasi kini telah dilengkapi <strong>Sinkronisasi Dinamis & Real-time File Watcher</strong>:
                   </p>
+                  <ul className="list-disc pl-5 space-y-1.5 text-[11px] text-slate-700">
+                    <li>
+                      <strong>Nama & Ekstensi File:</strong> Berkas utama adalah <code>siswa.csv</code> dan <code>guru.csv</code>. Sistem juga mendukung toleransi nama berekstensi <code>.txt</code> maupun jika tak sengaja tersimpan sebagai <code>.svg</code>.
+                    </li>
+                    <li>
+                      <strong>Otomatis Terbaca:</strong> Setiap kali Anda mengedit dan menyimpan file tersebut dengan Excel atau Notepad, aplikasi langsung membaca perubahannya secara otomatis saat jendela aplikasi diklik kembali.
+                    </li>
+                    <li>
+                      <strong>Shortcut Keyboard:</strong> Di dalam aplikasi Windows, tekan <code>Ctrl + O</code> untuk membuka folder <code>resources\format_data</code> di Windows Explorer, atau tekan <code>F5</code> untuk menyegarkan data seketika.
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>
