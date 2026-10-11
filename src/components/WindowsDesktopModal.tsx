@@ -490,6 +490,30 @@ pause
                     </li>
                   </ul>
                 </div>
+
+                {/* EKSPOR & IMPOR DATABASE SQLITE (*.DB) DI MODE DESKTOP */}
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded">Fitur Database</span>
+                    <strong className="text-slate-800 text-xs">
+                      Ekspor & Impor Database SQLite (*.db) di Mode Aplikasi Terinstall:
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-700 leading-relaxed">
+                    Aplikasi desktop telah dilengkapi engine SQLite mandiri tanpa membutuhkan koneksi server web atau internet:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1.5 text-[11px] text-slate-700">
+                    <li>
+                      <strong>Ekspor / Simpan Database (*.db):</strong> Klik tombol <em>"Unduh / Excel" &rarr; "Unduh Database SQLite (.db)"</em> atau tekan <code>Ctrl + S</code>. Jendela Windows "Simpan Sebagai" akan muncul untuk memilih lokasi penyimpanan (Desktop, Flashdisk, atau drive D:).
+                    </li>
+                    <li>
+                      <strong>Impor / Gabungkan Database (*.db):</strong> Klik tombol <em>"Impor / Merge DB (*.db)"</em> di atas tabel pelanggaran atau tekan <code>Ctrl + I</code>. Sistem akan membaca berkas dan menampilkan dialog konfirmasi apakah Anda ingin <strong>Setuju Gabungkan (Merge)</strong> dengan data yang ada, atau <strong>Tidak Setuju (Timpa Total)</strong>.
+                    </li>
+                    <li>
+                      <strong>Penyimpanan Fisik Otomatis:</strong> Setiap ada penambahan atau pengubahan data pelanggaran, aplikasi otomatis menyinkronkan file <code>buku_pelanggaran_sekolah.db</code> di komputer Anda.
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
           )}

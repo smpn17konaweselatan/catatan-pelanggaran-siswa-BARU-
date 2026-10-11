@@ -15,8 +15,9 @@ import { ClearAllViolationsModal } from './components/ClearAllViolationsModal';
 import { ViolationRecord, SchoolProfile, SanctionStatus } from './types/violation';
 import { INITIAL_VIOLATIONS } from './data/initialViolations';
 import { DEFAULT_SCHOOL_PROFILE } from './data/rulesCatalog';
-import { subscribeMasterData } from './data/schoolMasterData';
+import { subscribeMasterData, MASTER_STUDENTS, MASTER_TEACHERS } from './data/schoolMasterData';
 import { exportViolationsToCSV, downloadBlankTemplateCSV } from './utils/csvExport';
+import { generateSqliteDbBuffer } from './utils/sqliteClient';
 import { 
   fetchViolationsFromSql, 
   saveViolationToSql, 
@@ -110,6 +111,21 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
   }, [profile]);
+
+  // In Electron desktop mode, auto-sync physical active SQLite DB file (.db) to disk
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI?.isElectron && window.electronAPI?.saveActiveSqliteDb) {
+      const timer = setTimeout(async () => {
+        try {
+          const buffer = await generateSqliteDbBuffer(records, profile, MASTER_STUDENTS, MASTER_TEACHERS);
+          await window.electronAPI?.saveActiveSqliteDb?.(buffer);
+        } catch (e) {
+          console.warn('[Electron] Auto-sync SQLite DB error:', e);
+        }
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [records, profile]);
 
   // Subscribe to live master data updates (e.g. when user edits siswa.csv / guru.csv in Electron format_data folder)
   useEffect(() => {
@@ -215,14 +231,28 @@ export default function App() {
     showToast('Template tabel kosong berhasil diunduh.');
   };
 
-  const handleDownloadSqlDump = () => {
-    downloadSqlDatabaseFile();
-    showToast('Script database SQL (.sql) berhasil diunduh.');
+  const handleDownloadSqlDump = async () => {
+    try {
+      await downloadSqlDatabaseFile(records, profile);
+      showToast('Script database SQL (.sql) berhasil diunduh.');
+    } catch (err: any) {
+      showToast(`Gagal mengunduh script SQL: ${err.message || 'Terjadi kesalahan'}`);
+    }
   };
 
-  const handleDownloadSqliteDb = () => {
-    downloadSqliteDbFile();
-    showToast('File database SQLite (buku_pelanggaran_sekolah.db) berhasil diunduh.');
+  const handleDownloadSqliteDb = async () => {
+    try {
+      showToast('Sedang menyiapkan file database SQLite (.db)...');
+      const res = await downloadSqliteDbFile(records, profile);
+      if (res.canceled) return;
+      if (res.filePath) {
+        showToast(`Database SQLite berhasil disimpan: ${res.filePath}`);
+      } else {
+        showToast('File database SQLite (buku_pelanggaran_sekolah.db) berhasil diunduh.');
+      }
+    } catch (err: any) {
+      showToast(`Gagal mengekspor database SQLite: ${err.message || 'Terjadi kesalahan'}`);
+    }
   };
 
   const handleSelectDbFile = (file: File) => {
@@ -234,15 +264,26 @@ export default function App() {
     if (!selectedDbFile) return;
     try {
       showToast(merge ? 'Sedang menggabungkan database SQLite...' : 'Sedang memuat database SQLite...');
-      const result = await uploadSqliteDbFile(selectedDbFile, merge);
+      const result = await uploadSqliteDbFile(selectedDbFile, merge, records, profile);
 
-      // Reload violations and profile from database
-      const [newViolations, newProfile] = await Promise.all([
-        fetchViolationsFromSql(),
-        fetchSchoolProfileFromSql()
-      ]);
-      if (newViolations) setRecords(newViolations);
-      if (newProfile) setProfile(newProfile);
+      // Instantly apply imported violations and profile to UI
+      if (result.importedViolations) {
+        setRecords(result.importedViolations);
+      } else {
+        try {
+          const newViolations = await fetchViolationsFromSql();
+          if (newViolations && newViolations.length > 0) setRecords(newViolations);
+        } catch (_) {}
+      }
+
+      if (result.importedProfile) {
+        setProfile(result.importedProfile);
+      } else {
+        try {
+          const newProfile = await fetchSchoolProfileFromSql();
+          if (newProfile) setProfile(newProfile);
+        } catch (_) {}
+      }
 
       if (merge) {
         showToast(
@@ -271,8 +312,46 @@ export default function App() {
     }
     setRecords([]);
     localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify([]));
+
+    // Also persist empty database in Electron active file if running
+    if (window.electronAPI?.saveActiveSqliteDb) {
+      try {
+        const emptyDb = await generateSqliteDbBuffer([], profile, MASTER_STUDENTS, MASTER_TEACHERS);
+        await window.electronAPI.saveActiveSqliteDb(emptyDb);
+      } catch (_) {}
+    }
+
     showToast('Seluruh list catatan pelanggaran siswa berhasil dikosongkan dari database lokal.');
   };
+
+  // Listen to native Electron menu export & import shortcuts (Ctrl+S / Ctrl+I)
+  useEffect(() => {
+    if (window.electronAPI?.onMenuExportDb) {
+      const unsub = window.electronAPI.onMenuExportDb(() => {
+        handleDownloadSqliteDb();
+      });
+      return unsub;
+    }
+  }, [records, profile]);
+
+  useEffect(() => {
+    if (window.electronAPI?.onMenuImportDb) {
+      const unsub = window.electronAPI.onMenuImportDb(async () => {
+        if (window.electronAPI?.openSqliteDbDialog) {
+          try {
+            const res = await window.electronAPI.openSqliteDbDialog();
+            if (res.success && res.buffer && res.fileName) {
+              const file = new File([new Uint8Array(res.buffer)], res.fileName, { type: 'application/x-sqlite3' });
+              handleSelectDbFile(file);
+            }
+          } catch (e) {
+            console.error('Error opening file dialog:', e);
+          }
+        }
+      });
+      return unsub;
+    }
+  }, [records, profile]);
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col font-sans">

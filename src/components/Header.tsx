@@ -58,6 +58,24 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const handleTriggerImportDb = async () => {
+    setShowExportMenu(false);
+    if (typeof window !== 'undefined' && window.electronAPI?.isElectron && window.electronAPI?.openSqliteDbDialog) {
+      try {
+        const res = await window.electronAPI.openSqliteDbDialog();
+        if (res.canceled) return;
+        if (res.success && res.buffer && res.fileName) {
+          const file = new File([new Uint8Array(res.buffer)], res.fileName, { type: 'application/x-sqlite3' });
+          onUploadSqliteDb(file);
+          return;
+        }
+      } catch (err) {
+        console.warn('Native open dialog error, falling back to input:', err);
+      }
+    }
+    fileInputRef.current?.click();
+  };
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
@@ -231,10 +249,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
 
                     <button
-                      onClick={() => {
-                        setShowExportMenu(false);
-                        fileInputRef.current?.click();
-                      }}
+                      onClick={handleTriggerImportDb}
                       className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
                     >
                       <Upload className="w-4 h-4 text-indigo-600 shrink-0" />

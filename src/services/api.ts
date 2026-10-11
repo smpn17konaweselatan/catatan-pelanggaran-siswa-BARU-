@@ -6,13 +6,52 @@ import {
   TeacherMasterItem,
   syncMasterDataFromSource
 } from '../data/schoolMasterData.ts';
+import { DEFAULT_SCHOOL_PROFILE } from '../data/rulesCatalog.ts';
+import { 
+  generateSqliteDbBuffer, 
+  parseSqliteDbBuffer, 
+  inspectSqliteDbBuffer, 
+  generateSqlDumpText 
+} from '../utils/sqliteClient.ts';
+
+const STORAGE_KEY_RECORDS = 'buku_pelanggaran_records_v1';
+const STORAGE_KEY_PROFILE = 'buku_pelanggaran_profile_v1';
 
 export async function fetchViolationsFromSql(): Promise<ViolationRecord[]> {
-  const res = await fetch('/api/violations');
-  if (!res.ok) {
-    throw new Error('Gagal mengambil data dari database SQLite.');
+  // If in Electron, check if there is an active SQLite file on disk
+  if (typeof window !== 'undefined' && window.electronAPI?.getActiveSqliteDb) {
+    try {
+      const activeDb = await window.electronAPI.getActiveSqliteDb();
+      if (activeDb?.exists && activeDb.buffer) {
+        const parsed = await parseSqliteDbBuffer(activeDb.buffer);
+        if (parsed.violations && parsed.violations.length > 0) {
+          return parsed.violations;
+        }
+      }
+    } catch (err) {
+      console.warn('[Electron] Could not read active sqlite db:', err);
+    }
   }
-  return await res.json();
+
+  try {
+    const res = await fetch('/api/violations');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (_) {}
+
+  // Fallback to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+  }
+
+  return [];
 }
 
 export async function fetchStudentsFromSql(): Promise<StudentMasterItem[]> {
@@ -99,36 +138,133 @@ export async function clearAllViolationsFromSql(): Promise<{ count: number; mess
 }
 
 export async function fetchSchoolProfileFromSql(): Promise<SchoolProfile | null> {
+  // If in Electron, check active SQLite file
+  if (typeof window !== 'undefined' && window.electronAPI?.getActiveSqliteDb) {
+    try {
+      const activeDb = await window.electronAPI.getActiveSqliteDb();
+      if (activeDb?.exists && activeDb.buffer) {
+        const parsed = await parseSqliteDbBuffer(activeDb.buffer);
+        if (parsed.profile) {
+          return parsed.profile;
+        }
+      }
+    } catch (_) {}
+  }
+
   try {
     const res = await fetch('/api/school-profile');
-    if (!res.ok) return null;
-    return await res.json();
+    if (res.ok) return await res.json();
   } catch (e) {
-    console.warn('Could not fetch school profile from SQLite:', e);
-    return null;
+    console.warn('Could not fetch school profile from SQLite API:', e);
   }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROFILE);
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+  }
+
+  return null;
 }
 
 export async function updateSchoolProfileInSql(profile: SchoolProfile): Promise<void> {
-  const res = await fetch('/api/school-profile', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(profile),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Gagal memperbarui profil sekolah di database SQLite.');
+  // Save to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+    } catch (_) {}
   }
+
+  try {
+    const res = await fetch('/api/school-profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn('Server SQLite profile update warning:', data.error);
+    }
+  } catch (_) {}
 }
 
-// Download real physical SQLite database file (.db)
-export function downloadSqliteDbFile() {
-  const a = document.createElement('a');
-  a.href = '/api/database/download-sqlite';
-  a.download = 'buku_pelanggaran_sekolah.db';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+export interface DownloadDbResult {
+  success: boolean;
+  canceled?: boolean;
+  filePath?: string;
+  error?: string;
+}
+
+// Download real physical SQLite database binary file (.db)
+export async function downloadSqliteDbFile(
+  records?: ViolationRecord[],
+  profile?: SchoolProfile
+): Promise<DownloadDbResult> {
+  let recordsToExport = records;
+  let profileToExport = profile;
+
+  if (!recordsToExport && typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
+      if (saved) recordsToExport = JSON.parse(saved);
+    } catch (_) {}
+  }
+  if (!recordsToExport) recordsToExport = [];
+
+  if (!profileToExport && typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROFILE);
+      if (saved) profileToExport = JSON.parse(saved);
+    } catch (_) {}
+  }
+  if (!profileToExport) profileToExport = DEFAULT_SCHOOL_PROFILE;
+
+  // Generate binary SQLite 3 .db
+  const dbBuffer = await generateSqliteDbBuffer(
+    recordsToExport,
+    profileToExport,
+    MASTER_STUDENTS,
+    MASTER_TEACHERS
+  );
+
+  const cleanSchoolName = (profileToExport.namaSekolah || 'SMPN17_KONSEL')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dateStr = new Date().toISOString().split('T')[0];
+  const defaultFileName = `buku_pelanggaran_${cleanSchoolName}_${dateStr}.db`;
+
+  // 1. If in Electron, save via native Windows Save File Dialog
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron && window.electronAPI?.saveSqliteDb) {
+    try {
+      const res = await window.electronAPI.saveSqliteDb(dbBuffer, defaultFileName);
+      if (res.canceled) {
+        return { success: false, canceled: true };
+      }
+      if (res.success) {
+        return { success: true, filePath: res.filePath };
+      }
+    } catch (err: any) {
+      console.warn('[Electron] Save DB dialog error, falling back to blob download:', err);
+    }
+  }
+
+  // 2. Browser Blob download fallback
+  try {
+    const blob = new Blob([dbBuffer as any], { type: 'application/x-sqlite3' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 export interface MergeDbResult {
@@ -140,6 +276,8 @@ export interface MergeDbResult {
   studentsCount: number;
   teachersCount: number;
   message?: string;
+  importedViolations?: ViolationRecord[];
+  importedProfile?: SchoolProfile | null;
 }
 
 export interface DatabaseInspectionResult {
@@ -162,41 +300,184 @@ export interface DatabaseInspectionResult {
 // Inspect physical SQLite database file (.db) to preview before merge/replace
 export async function inspectSqliteDbFile(file: File): Promise<DatabaseInspectionResult> {
   const buffer = await file.arrayBuffer();
-  const res = await fetch('/api/database/inspect-sqlite', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-sqlite3' },
-    body: buffer,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'File database SQLite tidak valid atau rusak.');
+
+  // If in Electron, inspect directly via client-side SQLite engine
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+    return await inspectSqliteDbBuffer(buffer);
   }
-  return await res.json();
+
+  // If in browser, try server API first, fallback to client-side inspect
+  try {
+    const res = await fetch('/api/database/inspect-sqlite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-sqlite3' },
+      body: buffer,
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Server inspect endpoint unavailable, using in-browser inspection:', err);
+  }
+
+  return await inspectSqliteDbBuffer(buffer);
 }
 
 // Upload and restore/merge physical SQLite database file (.db)
-export async function uploadSqliteDbFile(file: File, merge: boolean = true): Promise<MergeDbResult> {
+export async function uploadSqliteDbFile(
+  file: File, 
+  merge: boolean = true,
+  currentRecords: ViolationRecord[] = [],
+  currentProfile: SchoolProfile | null = null
+): Promise<MergeDbResult> {
   const buffer = await file.arrayBuffer();
-  const res = await fetch(`/api/database/upload-sqlite?merge=${merge}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-sqlite3' },
-    body: buffer,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Gagal mengunggah file database SQLite.');
+
+  const runClientMerge = async (): Promise<MergeDbResult> => {
+    const { violations: incomingViolations, profile: incomingProfile, studentsCount, teachersCount } = 
+      await parseSqliteDbBuffer(buffer);
+
+    let finalViolations: ViolationRecord[] = [];
+    let newViolationsCount = 0;
+    let existingViolationsCount = currentRecords.length;
+
+    if (merge) {
+      finalViolations = [...currentRecords];
+      const existingIds = new Set(currentRecords.map(r => r.id));
+      const existingKeySet = new Set(
+        currentRecords.map(r => `${(r.namaSiswa || '').trim().toLowerCase()}_${r.tanggal}_${(r.jenisPelanggaran || '').trim().toLowerCase()}`)
+      );
+
+      for (const inv of incomingViolations) {
+        const key = `${(inv.namaSiswa || '').trim().toLowerCase()}_${inv.tanggal}_${(inv.jenisPelanggaran || '').trim().toLowerCase()}`;
+        if (!existingIds.has(inv.id) && !existingKeySet.has(key)) {
+          finalViolations.push(inv);
+          existingIds.add(inv.id);
+          existingKeySet.add(key);
+          newViolationsCount++;
+        }
+      }
+    } else {
+      finalViolations = [...incomingViolations];
+      newViolationsCount = incomingViolations.length;
+      existingViolationsCount = 0;
+    }
+
+    finalViolations.sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || ''));
+
+    let finalProfile = currentProfile;
+    if (incomingProfile && (!merge || !currentProfile || currentProfile.namaSekolah === DEFAULT_SCHOOL_PROFILE.namaSekolah)) {
+      finalProfile = { ...(currentProfile || DEFAULT_SCHOOL_PROFILE), ...incomingProfile };
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(finalViolations));
+        if (finalProfile) {
+          localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(finalProfile));
+        }
+      } catch (e) {
+        console.warn('Could not save to localStorage:', e);
+      }
+
+      if (window.electronAPI?.saveActiveSqliteDb) {
+        try {
+          const binaryDb = await generateSqliteDbBuffer(
+            finalViolations, 
+            finalProfile || DEFAULT_SCHOOL_PROFILE, 
+            MASTER_STUDENTS, 
+            MASTER_TEACHERS
+          );
+          await window.electronAPI.saveActiveSqliteDb(binaryDb);
+        } catch (e) {
+          console.warn('[Electron] Could not save active sqlite db to disk:', e);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      mode: merge ? 'merged' : 'replaced',
+      totalViolations: finalViolations.length,
+      newViolationsCount,
+      existingViolationsCount,
+      studentsCount,
+      teachersCount,
+      importedViolations: finalViolations,
+      importedProfile: finalProfile,
+      message: merge 
+        ? `Database berhasil digabungkan: +${newViolationsCount} data baru ditambahkan ke database (Total: ${finalViolations.length} data)`
+        : `Database berhasil dipulihkan & ditimpa (${finalViolations.length} data pelanggaran)`
+    };
+  };
+
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+    return await runClientMerge();
   }
-  return await res.json();
+
+  try {
+    const res = await fetch(`/api/database/upload-sqlite?merge=${merge}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-sqlite3' },
+      body: buffer,
+    });
+    if (res.ok) {
+      const serverResult = await res.json();
+      return serverResult;
+    }
+  } catch (err) {
+    console.warn('Server upload endpoint unreachable, falling back to client merge:', err);
+  }
+
+  return await runClientMerge();
 }
 
 // Download SQL text script (.sql)
-export function downloadSqlDatabaseFile() {
+export async function downloadSqlDatabaseFile(
+  records?: ViolationRecord[],
+  profile?: SchoolProfile
+): Promise<void> {
+  let recordsToExport = records;
+  let profileToExport = profile;
+
+  if (!recordsToExport && typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
+      if (saved) recordsToExport = JSON.parse(saved);
+    } catch (_) {}
+  }
+  if (!recordsToExport) recordsToExport = [];
+
+  if (!profileToExport && typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROFILE);
+      if (saved) profileToExport = JSON.parse(saved);
+    } catch (_) {}
+  }
+  if (!profileToExport) profileToExport = DEFAULT_SCHOOL_PROFILE;
+
+  const sqlDump = generateSqlDumpText(
+    recordsToExport,
+    profileToExport,
+    MASTER_STUDENTS,
+    MASTER_TEACHERS
+  );
+
+  const cleanSchoolName = (profileToExport.namaSekolah || 'SMPN17_KONSEL')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dateStr = new Date().toISOString().split('T')[0];
+  const filename = `database_pelanggaran_${cleanSchoolName}_${dateStr}.sql`;
+
+  const blob = new Blob([sqlDump], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = '/api/sql-dump';
-  a.download = 'database_buku_pelanggaran_siswa.sql';
+  a.href = url;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 // Download Master Guru CSV (.csv)

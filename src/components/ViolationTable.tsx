@@ -72,6 +72,23 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
     if (e.target) e.target.value = '';
   };
 
+  const handleTriggerImportDb = async () => {
+    if (typeof window !== 'undefined' && window.electronAPI?.isElectron && window.electronAPI?.openSqliteDbDialog) {
+      try {
+        const res = await window.electronAPI.openSqliteDbDialog();
+        if (res.canceled) return;
+        if (res.success && res.buffer && res.fileName) {
+          const file = new File([new Uint8Array(res.buffer)], res.fileName, { type: 'application/x-sqlite3' });
+          onImportDbFile?.(file);
+          return;
+        }
+      } catch (err) {
+        console.warn('Native open dialog error, falling back to input:', err);
+      }
+    }
+    dbFileInputRef.current?.click();
+  };
+
   // Sync external search filter if passed (e.g. from DisciplineRadarCard "Lihat Kasus")
   React.useEffect(() => {
     if (externalSearchFilter !== undefined) {
@@ -266,7 +283,7 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
               <>
                 <button
                   type="button"
-                  onClick={() => dbFileInputRef.current?.click()}
+                  onClick={handleTriggerImportDb}
                   title="Impor file SQLite (.db) dari komputer dengan opsi gabungkan (merge) atau timpa database lokal"
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-colors cursor-pointer shadow-2xs"
                 >

@@ -185,6 +185,25 @@ function createWindow() {
       label: 'Berkas',
       submenu: [
         {
+          label: 'Simpan / Ekspor Database SQLite (*.db)...',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu-export-db');
+            }
+          },
+        },
+        {
+          label: 'Buka / Impor Database SQLite (*.db)...',
+          accelerator: 'CmdOrCtrl+I',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu-import-db');
+            }
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Buka Folder Master Data (resources/format_data)',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
@@ -196,10 +215,20 @@ function createWindow() {
           },
         },
         {
+          label: 'Buka Folder Penyimpanan Database (.db)',
+          click: async () => {
+            const dir = app.getPath('userData');
+            if (!fs.existsSync(dir)) {
+              try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+            }
+            await shell.openPath(dir);
+          },
+        },
+        {
           label: 'Sinkronkan Data Siswa & Guru Sekarang',
           accelerator: 'F5',
           click: () => {
-            if (mainWindow) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
               const data = readMasterData();
               mainWindow.webContents.send('master-data-updated', data);
             }
@@ -339,6 +368,33 @@ function createWindow() {
   });
 }
 
+// Resolve physical SQLite .db path on local Windows machine
+function resolveActiveDbPath() {
+  const userDataDir = app.getPath('userData');
+  const userDataDb = path.join(userDataDir, 'buku_pelanggaran_sekolah.db');
+
+  // Check if there is an existing database file in userData
+  if (fs.existsSync(userDataDb)) {
+    return userDataDb;
+  }
+
+  // Check if user placed a .db file in resources/format_data
+  const formatDataDir = resolveFormatDataDir();
+  const formatDataDb = path.join(formatDataDir, 'buku_pelanggaran_sekolah.db');
+  if (fs.existsSync(formatDataDb)) {
+    return formatDataDb;
+  }
+
+  // Check working directory
+  const cwdDb = path.join(process.cwd(), 'buku_pelanggaran_sekolah.db');
+  if (fs.existsSync(cwdDb)) {
+    return cwdDb;
+  }
+
+  // Default path in userData
+  return userDataDb;
+}
+
 // IPC Handlers
 ipcMain.handle('get-master-data', () => {
   return readMasterData();
@@ -357,6 +413,151 @@ ipcMain.handle('open-format-data-folder', async () => {
   }
   await shell.openPath(dir);
   return { success: true, dir };
+});
+
+ipcMain.handle('open-user-data-folder', async () => {
+  const dir = app.getPath('userData');
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (_) {}
+  }
+  await shell.openPath(dir);
+  return { success: true, dir };
+});
+
+// Save SQLite .db binary file with native Windows Save File Dialog
+ipcMain.handle('save-sqlite-db', async (_event, { buffer, defaultName }) => {
+  const { dialog } = require('electron');
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const result = await dialog.showSaveDialog(win, {
+    title: 'Simpan Database SQLite (*.db)',
+    defaultPath: defaultName || 'buku_pelanggaran_sekolah.db',
+    filters: [
+      { name: 'Database SQLite (*.db, *.sqlite, *.sqlite3)', extensions: ['db', 'sqlite', 'sqlite3'] },
+      { name: 'Semua Berkas (*.*)', extensions: ['*'] }
+    ]
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { canceled: true };
+  }
+
+  try {
+    let nodeBuf;
+    if (Buffer.isBuffer(buffer)) {
+      nodeBuf = buffer;
+    } else if (buffer instanceof ArrayBuffer) {
+      nodeBuf = Buffer.from(buffer);
+    } else if (buffer && buffer.buffer instanceof ArrayBuffer) {
+      nodeBuf = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } else {
+      nodeBuf = Buffer.from(buffer);
+    }
+
+    fs.writeFileSync(result.filePath, nodeBuf);
+    return {
+      success: true,
+      filePath: result.filePath,
+      fileName: path.basename(result.filePath)
+    };
+  } catch (err) {
+    console.error('[Electron] Error writing saved SQLite DB file:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Pick SQLite .db file with native Windows Open File Dialog
+ipcMain.handle('open-sqlite-db-dialog', async () => {
+  const { dialog } = require('electron');
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Pilih File Database SQLite (*.db)',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Database SQLite (*.db, *.sqlite, *.sqlite3)', extensions: ['db', 'sqlite', 'sqlite3'] },
+      { name: 'Semua Berkas (*.*)', extensions: ['*'] }
+    ]
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const selectedPath = result.filePaths[0];
+  try {
+    const fileBuf = fs.readFileSync(selectedPath);
+    return {
+      success: true,
+      filePath: selectedPath,
+      fileName: path.basename(selectedPath),
+      fileSize: fileBuf.length,
+      buffer: fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength)
+    };
+  } catch (err) {
+    console.error('[Electron] Error reading selected SQLite DB file:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Save active database to application data directory on disk
+ipcMain.handle('save-active-sqlite-db', async (_event, { buffer }) => {
+  try {
+    const targetPath = resolveActiveDbPath();
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    let nodeBuf;
+    if (Buffer.isBuffer(buffer)) {
+      nodeBuf = buffer;
+    } else if (buffer instanceof ArrayBuffer) {
+      nodeBuf = Buffer.from(buffer);
+    } else if (buffer && buffer.buffer instanceof ArrayBuffer) {
+      nodeBuf = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } else {
+      nodeBuf = Buffer.from(buffer);
+    }
+
+    fs.writeFileSync(targetPath, nodeBuf);
+
+    // Also mirror to format_data folder if possible
+    try {
+      const formatDataDir = resolveFormatDataDir();
+      if (fs.existsSync(formatDataDir)) {
+        const mirrorPath = path.join(formatDataDir, 'buku_pelanggaran_sekolah.db');
+        if (mirrorPath !== targetPath) {
+          fs.writeFileSync(mirrorPath, nodeBuf);
+        }
+      }
+    } catch (_) {}
+
+    return { success: true, path: targetPath };
+  } catch (err) {
+    console.error('[Electron] Error saving active SQLite DB:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Read active database from disk if available
+ipcMain.handle('get-active-sqlite-db', async () => {
+  try {
+    const activePath = resolveActiveDbPath();
+    if (fs.existsSync(activePath)) {
+      const fileBuf = fs.readFileSync(activePath);
+      return {
+        exists: true,
+        path: activePath,
+        fileSize: fileBuf.length,
+        buffer: fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength)
+      };
+    }
+    return { exists: false };
+  } catch (err) {
+    console.error('[Electron] Error reading active SQLite DB:', err);
+    return { exists: false, error: err.message };
+  }
 });
 
 app.whenReady().then(() => {
