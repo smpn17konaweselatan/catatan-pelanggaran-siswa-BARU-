@@ -13,7 +13,10 @@ import {
   getSqliteSchoolProfile, 
   updateSqliteSchoolProfile,
   getDatabaseFileBuffer,
-  restoreDatabaseFromFile
+  restoreDatabaseFromFile,
+  mergeDatabaseFromFile,
+  inspectDatabaseBuffer,
+  clearAllSqliteViolations
 } from './src/db/sqlite.ts';
 
 dotenv.config();
@@ -78,6 +81,21 @@ app.put('/api/violations/:id', async (req, res) => {
   } catch (error: any) {
     console.error('[SQLite] Error updating violation:', error);
     res.status(500).json({ error: error.message || 'Gagal memperbarui di database SQLite.' });
+  }
+});
+
+// API: Delete ALL violations from SQLite (Clear database list)
+app.delete('/api/violations', async (req, res) => {
+  try {
+    const deletedCount = await clearAllSqliteViolations();
+    res.json({ 
+      success: true, 
+      count: deletedCount, 
+      message: `Seluruh data catatan pelanggaran (${deletedCount} catatan) berhasil dikosongkan dari database SQLite.` 
+    });
+  } catch (error: any) {
+    console.error('[SQLite] Error clearing all violations:', error);
+    res.status(500).json({ error: error.message || 'Gagal mengosongkan database pelanggaran SQLite.' });
   }
 });
 
@@ -241,17 +259,38 @@ app.get('/api/database/download-sqlite', async (req, res) => {
   }
 });
 
-// API: Restore SQLite database from uploaded .db file
+// API: Inspect SQLite database from uploaded .db file (preview before merge/replace)
+app.post('/api/database/inspect-sqlite', async (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'File binary database SQLite tidak valid atau kosong.' });
+    }
+    const inspection = await inspectDatabaseBuffer(req.body);
+    res.json(inspection);
+  } catch (error: any) {
+    console.error('[SQLite] Error inspecting .db file:', error);
+    res.status(500).json({ error: error.message || 'File database SQLite tidak valid atau rusak.' });
+  }
+});
+
+// API: Restore / Merge SQLite database from uploaded .db file (with optional merge parameter)
 app.post('/api/database/upload-sqlite', async (req, res) => {
   try {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'File binary database SQLite tidak valid atau kosong.' });
     }
-    await restoreDatabaseFromFile(req.body);
-    res.json({ success: true, message: 'File database SQLite berhasil dipulihkan.' });
+    const shouldMerge = req.query.merge !== 'false';
+    const result = await mergeDatabaseFromFile(req.body, shouldMerge);
+    res.json({
+      success: true,
+      ...result,
+      message: shouldMerge
+        ? `Database berhasil digabungkan: +${result.newViolationsCount} data baru ditambahkan ke database lokal (Total: ${result.totalViolations} data).`
+        : `Database berhasil ditimpa penuh dengan ${result.totalViolations} data dari file eksternal.`
+    });
   } catch (error: any) {
-    console.error('[SQLite] Error restoring .db file:', error);
-    res.status(500).json({ error: error.message || 'Gagal memulihkan database SQLite.' });
+    console.error('[SQLite] Error restoring/merging .db file:', error);
+    res.status(500).json({ error: error.message || 'Gagal memproses database SQLite.' });
   }
 });
 

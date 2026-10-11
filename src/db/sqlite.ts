@@ -238,7 +238,7 @@ export async function getDatabaseFileBuffer(): Promise<Buffer> {
   return fs.readFileSync(DB_FILE_PATH);
 }
 
-// Restore database from uploaded buffer
+// Restore database from uploaded buffer (direct replace)
 export async function restoreDatabaseFromFile(buffer: Buffer): Promise<void> {
   if (!SQL) {
     SQL = await initSqlJs();
@@ -247,6 +247,280 @@ export async function restoreDatabaseFromFile(buffer: Buffer): Promise<void> {
   ensureTables(db);
   saveDatabaseToDisk(db);
   console.log('[SQLite] Database berhasil dipulihkan dari file .db');
+}
+
+export interface MergeDatabaseResult {
+  mode: 'merged' | 'replaced';
+  totalViolations: number;
+  newViolationsCount: number;
+  existingViolationsCount: number;
+  studentsCount: number;
+  teachersCount: number;
+}
+
+export interface DatabaseInspectionResult {
+  valid: boolean;
+  violationsCount: number;
+  studentsCount: number;
+  teachersCount: number;
+  schoolName: string;
+  sampleViolations: Array<{
+    id: string;
+    namaSiswa: string;
+    jenisPelanggaran: string;
+    tanggal: string;
+    poin: number;
+    kategori: string;
+    kelas: string;
+  }>;
+}
+
+// Inspect uploaded .db buffer before merging/restoring
+export async function inspectDatabaseBuffer(buffer: Buffer): Promise<DatabaseInspectionResult> {
+  if (!SQL) {
+    SQL = await initSqlJs();
+  }
+
+  const tempDb = new SQL.Database(buffer);
+  let violationsCount = 0;
+  let studentsCount = 0;
+  let teachersCount = 0;
+  let schoolName = 'SMP NEGERI 17 KONAWE SELATAN';
+  const sampleViolations: DatabaseInspectionResult['sampleViolations'] = [];
+
+  try {
+    const pRes = tempDb.exec('SELECT nama_sekolah FROM school_profile LIMIT 1;');
+    if (pRes[0] && pRes[0].values && pRes[0].values[0]) {
+      schoolName = String(pRes[0].values[0][0]);
+    }
+  } catch (_) {}
+
+  try {
+    const vCountRes = tempDb.exec('SELECT COUNT(*) FROM violations;');
+    if (vCountRes[0] && vCountRes[0].values && vCountRes[0].values[0]) {
+      violationsCount = Number(vCountRes[0].values[0][0]) || 0;
+    }
+  } catch (_) {}
+
+  try {
+    const sCountRes = tempDb.exec('SELECT COUNT(*) FROM students;');
+    if (sCountRes[0] && sCountRes[0].values && sCountRes[0].values[0]) {
+      studentsCount = Number(sCountRes[0].values[0][0]) || 0;
+    }
+  } catch (_) {}
+
+  try {
+    const tCountRes = tempDb.exec('SELECT COUNT(*) FROM teachers;');
+    if (tCountRes[0] && tCountRes[0].values && tCountRes[0].values[0]) {
+      teachersCount = Number(tCountRes[0].values[0][0]) || 0;
+    }
+  } catch (_) {}
+
+  try {
+    const samplesRes = tempDb.exec(`
+      SELECT id, nama_siswa, jenis_pelanggaran, tanggal, poin, kategori, kelas
+      FROM violations
+      ORDER BY tanggal DESC
+      LIMIT 4;
+    `);
+    if (samplesRes[0] && samplesRes[0].values) {
+      for (const row of samplesRes[0].values) {
+        sampleViolations.push({
+          id: String(row[0]),
+          namaSiswa: String(row[1]),
+          jenisPelanggaran: String(row[2]),
+          tanggal: String(row[3]),
+          poin: Number(row[4]) || 0,
+          kategori: String(row[5] || 'Ringan'),
+          kelas: String(row[6] || 'VII-A'),
+        });
+      }
+    }
+  } catch (_) {}
+
+  tempDb.close();
+
+  return {
+    valid: true,
+    violationsCount,
+    studentsCount,
+    teachersCount,
+    schoolName,
+    sampleViolations,
+  };
+}
+
+// Restore or Merge database from uploaded .db buffer
+export async function mergeDatabaseFromFile(
+  incomingBuffer: Buffer,
+  merge: boolean = true
+): Promise<MergeDatabaseResult> {
+  if (!SQL) {
+    SQL = await initSqlJs();
+  }
+
+  // JIKA TIDAK SETUJU MERGE: TIMPA PENUH DATABASE LOKAL
+  if (!merge) {
+    db = new SQL.Database(incomingBuffer);
+    ensureTables(db);
+    saveDatabaseToDisk(db);
+    const violations = await getSqliteViolations();
+    const students = await getSqliteStudents();
+    const teachers = await getSqliteTeachers();
+    console.log(`[SQLite] Database berhasil ditimpa total (${violations.length} violations)`);
+    return {
+      mode: 'replaced',
+      totalViolations: violations.length,
+      newViolationsCount: violations.length,
+      existingViolationsCount: 0,
+      studentsCount: students.length,
+      teachersCount: teachers.length,
+    };
+  }
+
+  // JIKA SETUJU MERGE: GABUNGKAN DATA KE DALAM DATABASE LOKAL SAAT INI
+  const currentDb = await getSqliteDb();
+  const incomingDb = new SQL.Database(incomingBuffer);
+  ensureTables(incomingDb);
+
+  let newViolationsCount = 0;
+  let existingViolationsCount = 0;
+
+  try {
+    const incomingViolations = incomingDb.exec(`
+      SELECT id, tanggal, waktu, student_nisn, nama_siswa, jenis_kelamin, kelas,
+             kategori, jenis_pelanggaran, poin, sanksi, tempat_kejadian, guru_pelapor,
+             guru_bk, status_sanksi, catatan_pembinaan, tenggat_sanksi
+      FROM violations;
+    `);
+
+    if (incomingViolations[0] && incomingViolations[0].values) {
+      const cols = incomingViolations[0].columns;
+      const stmtCheck = currentDb.prepare('SELECT id FROM violations WHERE id = $id;');
+      const stmtUpsert = currentDb.prepare(`
+        INSERT INTO violations (
+          id, tanggal, waktu, student_nisn, nama_siswa, jenis_kelamin, kelas,
+          kategori, jenis_pelanggaran, poin, sanksi, tempat_kejadian, guru_pelapor,
+          guru_bk, status_sanksi, catatan_pembinaan, tenggat_sanksi, updated_at
+        ) VALUES (
+          $id, $tanggal, $waktu, $student_nisn, $nama_siswa, $jenis_kelamin, $kelas,
+          $kategori, $jenis_pelanggaran, $poin, $sanksi, $tempat_kejadian, $guru_pelapor,
+          $guru_bk, $status_sanksi, $catatan_pembinaan, $tenggat_sanksi, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          tanggal = excluded.tanggal,
+          waktu = excluded.waktu,
+          student_nisn = excluded.student_nisn,
+          nama_siswa = excluded.nama_siswa,
+          jenis_kelamin = excluded.jenis_kelamin,
+          kelas = excluded.kelas,
+          kategori = excluded.kategori,
+          jenis_pelanggaran = excluded.jenis_pelanggaran,
+          poin = excluded.poin,
+          sanksi = excluded.sanksi,
+          tempat_kejadian = excluded.tempat_kejadian,
+          guru_pelapor = excluded.guru_pelapor,
+          guru_bk = excluded.guru_bk,
+          status_sanksi = excluded.status_sanksi,
+          catatan_pembinaan = excluded.catatan_pembinaan,
+          tenggat_sanksi = excluded.tenggat_sanksi,
+          updated_at = CURRENT_TIMESTAMP;
+      `);
+
+      for (const row of incomingViolations[0].values) {
+        const obj: any = {};
+        cols.forEach((col, idx) => {
+          obj[col] = row[idx];
+        });
+
+        const recordId = String(obj.id);
+        stmtCheck.bind({ $id: recordId });
+        const exists = stmtCheck.step();
+        stmtCheck.reset();
+
+        if (exists) {
+          existingViolationsCount++;
+        } else {
+          newViolationsCount++;
+        }
+
+        stmtUpsert.run({
+          $id: recordId,
+          $tanggal: String(obj.tanggal || ''),
+          $waktu: String(obj.waktu || '07:15'),
+          $student_nisn: obj.student_nisn ? String(obj.student_nisn) : null,
+          $nama_siswa: String(obj.nama_siswa || ''),
+          $jenis_kelamin: String(obj.jenis_kelamin || 'L'),
+          $kelas: String(obj.kelas || 'VII-A'),
+          $kategori: String(obj.kategori || 'Ringan'),
+          $jenis_pelanggaran: String(obj.jenis_pelanggaran || ''),
+          $poin: Number(obj.poin) || 0,
+          $sanksi: String(obj.sanksi || ''),
+          $tempat_kejadian: String(obj.tempat_kejadian || 'Lingkungan Sekolah'),
+          $guru_pelapor: String(obj.guru_pelapor || ''),
+          $guru_bk: String(obj.guru_bk || ''),
+          $status_sanksi: String(obj.status_sanksi || 'Belum Ditindaklanjuti'),
+          $catatan_pembinaan: String(obj.catatan_pembinaan || ''),
+          $tenggat_sanksi: obj.tenggat_sanksi ? String(obj.tenggat_sanksi) : null,
+        });
+      }
+
+      stmtCheck.free();
+      stmtUpsert.free();
+    }
+  } catch (err) {
+    console.error('[SQLite Merge] Error merging violations:', err);
+    throw err;
+  }
+
+  // Gabungkan juga data siswa (jika ada data baru di students table)
+  try {
+    const incomingStudents = incomingDb.exec(`SELECT nis, nisn, nama, jenis_kelamin, kelas, alamat FROM students;`);
+    if (incomingStudents[0] && incomingStudents[0].values) {
+      const stmtStudent = currentDb.prepare(`
+        INSERT INTO students (nis, nisn, nama, jenis_kelamin, kelas, alamat, updated_at)
+        VALUES ($nis, $nisn, $nama, $jenis_kelamin, $kelas, $alamat, CURRENT_TIMESTAMP)
+        ON CONFLICT(nisn) DO UPDATE SET
+          nama = excluded.nama,
+          kelas = excluded.kelas,
+          updated_at = CURRENT_TIMESTAMP;
+      `);
+      for (const row of incomingStudents[0].values) {
+        const [nis, nisn, nama, jk, kelas, alamat] = row;
+        if (nisn && nama) {
+          stmtStudent.run({
+            $nis: nis ? String(nis) : null,
+            $nisn: String(nisn),
+            $nama: String(nama),
+            $jenis_kelamin: String(jk || 'L'),
+            $kelas: String(kelas || 'VII-A'),
+            $alamat: alamat ? String(alamat) : null,
+          });
+        }
+      }
+      stmtStudent.free();
+    }
+  } catch (err) {
+    console.warn('[SQLite Merge] Warning merging students table:', err);
+  }
+
+  saveDatabaseToDisk(currentDb);
+  incomingDb.close();
+
+  const finalViolations = await getSqliteViolations();
+  const finalStudents = await getSqliteStudents();
+  const finalTeachers = await getSqliteTeachers();
+
+  console.log(`[SQLite Merge] Sukses gabungkan: +${newViolationsCount} baru, ${existingViolationsCount} diperbarui (Total: ${finalViolations.length})`);
+
+  return {
+    mode: 'merged',
+    totalViolations: finalViolations.length,
+    newViolationsCount,
+    existingViolationsCount,
+    studentsCount: finalStudents.length,
+    teachersCount: finalTeachers.length,
+  };
 }
 
 // Ensure database schema and initial seed
@@ -507,6 +781,22 @@ export async function deleteSqliteViolation(id: string): Promise<void> {
   stmt.run({ $id: id });
   stmt.free();
   saveDatabaseToDisk(database);
+}
+
+export async function clearAllSqliteViolations(): Promise<number> {
+  const database = await getSqliteDb();
+  let count = 0;
+  try {
+    const countRes = database.exec('SELECT COUNT(*) FROM violations;');
+    if (countRes[0] && countRes[0].values && countRes[0].values[0]) {
+      count = Number(countRes[0].values[0][0]) || 0;
+    }
+  } catch (_) {}
+
+  database.run('DELETE FROM violations;');
+  saveDatabaseToDisk(database);
+  console.log(`[SQLite] Seluruh list pelanggaran siswa berhasil dikosongkan (${count} data dihapus).`);
+  return count;
 }
 
 // -----------------------------------------------------------------------------

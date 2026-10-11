@@ -10,6 +10,8 @@ import { PrintLetterModal } from './components/PrintLetterModal';
 import { RulesCatalogModal } from './components/RulesCatalogModal';
 import { SchoolProfileModal } from './components/SchoolProfileModal';
 import { WindowsDesktopModal } from './components/WindowsDesktopModal';
+import { DbImportMergeModal } from './components/DbImportMergeModal';
+import { ClearAllViolationsModal } from './components/ClearAllViolationsModal';
 import { ViolationRecord, SchoolProfile, SanctionStatus } from './types/violation';
 import { INITIAL_VIOLATIONS } from './data/initialViolations';
 import { DEFAULT_SCHOOL_PROFILE } from './data/rulesCatalog';
@@ -20,6 +22,7 @@ import {
   saveViolationToSql, 
   updateViolationInSql, 
   deleteViolationFromSql, 
+  clearAllViolationsFromSql,
   fetchSchoolProfileFromSql, 
   updateSchoolProfileInSql,
   downloadSqlDatabaseFile,
@@ -67,6 +70,9 @@ export default function App() {
   const [isRulesCatalogOpen, setIsRulesCatalogOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isWindowsDesktopModalOpen, setIsWindowsDesktopModalOpen] = useState(false);
+  const [selectedDbFile, setSelectedDbFile] = useState<File | null>(null);
+  const [isDbImportModalOpen, setIsDbImportModalOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -219,21 +225,53 @@ export default function App() {
     showToast('File database SQLite (buku_pelanggaran_sekolah.db) berhasil diunduh.');
   };
 
-  const handleUploadSqliteDb = async (file: File) => {
+  const handleSelectDbFile = (file: File) => {
+    setSelectedDbFile(file);
+    setIsDbImportModalOpen(true);
+  };
+
+  const handleConfirmDbImport = async (merge: boolean) => {
+    if (!selectedDbFile) return;
     try {
-      showToast('Sedang memuat file database SQLite...');
-      await uploadSqliteDbFile(file);
-      // Reload violations and profile
+      showToast(merge ? 'Sedang menggabungkan database SQLite...' : 'Sedang memuat database SQLite...');
+      const result = await uploadSqliteDbFile(selectedDbFile, merge);
+
+      // Reload violations and profile from database
       const [newViolations, newProfile] = await Promise.all([
         fetchViolationsFromSql(),
         fetchSchoolProfileFromSql()
       ]);
       if (newViolations) setRecords(newViolations);
       if (newProfile) setProfile(newProfile);
-      showToast('Database SQLite berhasil dipulihkan dari file komputer!');
+
+      if (merge) {
+        showToast(
+          result.message || 
+          `Database berhasil digabungkan: +${result.newViolationsCount} data baru ditambahkan ke database lokal (Total: ${result.totalViolations} data)!`
+        );
+      } else {
+        showToast(
+          result.message || 
+          `Database SQLite berhasil dipulihkan & ditimpa (${result.totalViolations} data)!`
+        );
+      }
     } catch (err: any) {
-      showToast(`Gagal memuat database: ${err.message || 'File tidak valid'}`);
+      console.error('Error importing/merging DB file:', err);
+      showToast(`Gagal memproses database: ${err.message || 'File tidak valid'}`);
+      throw err;
     }
+  };
+
+  const handleConfirmClearAll = async () => {
+    try {
+      showToast('Sedang mengosongkan seluruh data pelanggaran...');
+      await clearAllViolationsFromSql();
+    } catch (err) {
+      console.warn('Could not clear from SQL server, clearing locally:', err);
+    }
+    setRecords([]);
+    localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify([]));
+    showToast('Seluruh list catatan pelanggaran siswa berhasil dikosongkan dari database lokal.');
   };
 
   return (
@@ -261,8 +299,9 @@ export default function App() {
         onDownloadBlankTemplate={handleDownloadBlankTemplate}
         onDownloadSqlDump={handleDownloadSqlDump}
         onDownloadSqliteDb={handleDownloadSqliteDb}
-        onUploadSqliteDb={handleUploadSqliteDb}
+        onUploadSqliteDb={handleSelectDbFile}
         onResetDemoData={handleResetDemoData}
+        onOpenClearAllModal={() => setIsClearAllModalOpen(true)}
       />
 
       {/* Content Container */}
@@ -298,6 +337,8 @@ export default function App() {
             onToggleStatus={handleToggleStatus}
             externalSearchFilter={tableFilterStudent}
             onClearExternalFilter={() => setTableFilterStudent('')}
+            onImportDbFile={handleSelectDbFile}
+            onClearAllViolations={() => setIsClearAllModalOpen(true)}
           />
         </div>
       </main>
@@ -379,6 +420,27 @@ export default function App() {
       <WindowsDesktopModal
         isOpen={isWindowsDesktopModalOpen}
         onClose={() => setIsWindowsDesktopModalOpen(false)}
+      />
+
+      {/* 7. SQLite Database Import & Optional Merge Modal */}
+      <DbImportMergeModal
+        isOpen={isDbImportModalOpen}
+        file={selectedDbFile}
+        currentRecordsCount={records.length}
+        onClose={() => {
+          setIsDbImportModalOpen(false);
+          setSelectedDbFile(null);
+        }}
+        onConfirm={handleConfirmDbImport}
+      />
+
+      {/* 8. Clear / Empty All Violations Confirmation Modal */}
+      <ClearAllViolationsModal
+        isOpen={isClearAllModalOpen}
+        recordsCount={records.length}
+        onClose={() => setIsClearAllModalOpen(false)}
+        onConfirm={handleConfirmClearAll}
+        onDownloadBackup={handleDownloadSqliteDb}
       />
     </div>
   );

@@ -28,7 +28,9 @@ import {
   User,
   ShieldAlert,
   Activity,
-  TrendingDown
+  TrendingDown,
+  Database,
+  GitMerge
 } from 'lucide-react';
 
 interface ViolationTableProps {
@@ -39,6 +41,8 @@ interface ViolationTableProps {
   onToggleStatus: (id: string, newStatus: SanctionStatus) => void;
   externalSearchFilter?: string;
   onClearExternalFilter?: () => void;
+  onImportDbFile?: (file: File) => void;
+  onClearAllViolations?: () => void;
 }
 
 export const ViolationTable: React.FC<ViolationTableProps> = ({
@@ -48,7 +52,9 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
   onGenerateLetter,
   onToggleStatus,
   externalSearchFilter,
-  onClearExternalFilter
+  onClearExternalFilter,
+  onImportDbFile,
+  onClearAllViolations
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSeverity, setFilterSeverity] = useState<string>('Semua');
@@ -56,6 +62,15 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('Semua');
   const [filterBalance, setFilterBalance] = useState<string>('Semua');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const dbFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleDbFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onImportDbFile) {
+      onImportDbFile(file);
+    }
+    if (e.target) e.target.value = '';
+  };
 
   // Sync external search filter if passed (e.g. from DisciplineRadarCard "Lihat Kasus")
   React.useEffect(() => {
@@ -223,9 +238,9 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
           </div>
         </div>
 
-        {/* Active Filter Indicators */}
-        <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-          <div className="flex items-center gap-2">
+        {/* Active Filter Indicators & DB Import Action */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-500 pt-1 gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span>
               Menampilkan <strong>{filteredRecords.length}</strong> dari <strong>{records.length}</strong> data pelanggaran
             </span>
@@ -245,9 +260,43 @@ export const ViolationTable: React.FC<ViolationTableProps> = ({
               </button>
             )}
           </div>
-          <span className="text-[11px] text-slate-400">
-            Klik baris untuk rincian sisa saldo disiplin & pembinaan BK
-          </span>
+
+          <div className="flex items-center gap-2">
+            {onImportDbFile && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => dbFileInputRef.current?.click()}
+                  title="Impor file SQLite (.db) dari komputer dengan opsi gabungkan (merge) atau timpa database lokal"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Database className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Impor / Merge DB (*.db)</span>
+                </button>
+                <input
+                  ref={dbFileInputRef}
+                  type="file"
+                  accept=".db,.sqlite,.sqlite3"
+                  onChange={handleDbFileChange}
+                  className="hidden"
+                />
+              </>
+            )}
+            {onClearAllViolations && records.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearAllViolations}
+                title="Hapus dan kosongkan seluruh list catatan pelanggaran di tabel dan database lokal"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50/80 hover:bg-rose-100 border border-rose-200/80 rounded-lg transition-colors cursor-pointer shadow-2xs"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Kosongkan List</span>
+              </button>
+            )}
+            <span className="hidden md:inline text-[11px] text-slate-400">
+              Klik baris untuk rincian sisa saldo & pembinaan
+            </span>
+          </div>
         </div>
       </div>
 

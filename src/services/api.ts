@@ -87,6 +87,17 @@ export async function deleteViolationFromSql(id: string): Promise<void> {
   }
 }
 
+export async function clearAllViolationsFromSql(): Promise<{ count: number; message: string }> {
+  const res = await fetch('/api/violations', {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Gagal mengosongkan seluruh data pelanggaran dari database SQLite.');
+  }
+  return await res.json();
+}
+
 export async function fetchSchoolProfileFromSql(): Promise<SchoolProfile | null> {
   try {
     const res = await fetch('/api/school-profile');
@@ -120,10 +131,53 @@ export function downloadSqliteDbFile() {
   document.body.removeChild(a);
 }
 
-// Upload and restore physical SQLite database file (.db)
-export async function uploadSqliteDbFile(file: File): Promise<void> {
+export interface MergeDbResult {
+  success: boolean;
+  mode: 'merged' | 'replaced';
+  totalViolations: number;
+  newViolationsCount: number;
+  existingViolationsCount: number;
+  studentsCount: number;
+  teachersCount: number;
+  message?: string;
+}
+
+export interface DatabaseInspectionResult {
+  valid: boolean;
+  violationsCount: number;
+  studentsCount: number;
+  teachersCount: number;
+  schoolName: string;
+  sampleViolations: Array<{
+    id: string;
+    namaSiswa: string;
+    jenisPelanggaran: string;
+    tanggal: string;
+    poin: number;
+    kategori: string;
+    kelas: string;
+  }>;
+}
+
+// Inspect physical SQLite database file (.db) to preview before merge/replace
+export async function inspectSqliteDbFile(file: File): Promise<DatabaseInspectionResult> {
   const buffer = await file.arrayBuffer();
-  const res = await fetch('/api/database/upload-sqlite', {
+  const res = await fetch('/api/database/inspect-sqlite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-sqlite3' },
+    body: buffer,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'File database SQLite tidak valid atau rusak.');
+  }
+  return await res.json();
+}
+
+// Upload and restore/merge physical SQLite database file (.db)
+export async function uploadSqliteDbFile(file: File, merge: boolean = true): Promise<MergeDbResult> {
+  const buffer = await file.arrayBuffer();
+  const res = await fetch(`/api/database/upload-sqlite?merge=${merge}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-sqlite3' },
     body: buffer,
@@ -132,6 +186,7 @@ export async function uploadSqliteDbFile(file: File): Promise<void> {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Gagal mengunggah file database SQLite.');
   }
+  return await res.json();
 }
 
 // Download SQL text script (.sql)
